@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data (all user data lives in ~/.bespoke/, not in repo)
+*.db
+*.db-wal
+*.db-shm
+*.jsonl
+*.gguf
+*.safetensors
+*.onnx
+*.onnx_data
+
+# Model weights and adapters
+adapters/
+scorecards/
+/benchmark/
+models/
+
+# Internal docs (kept locally, not published)
+docs/
+
+# OS
+.DS_Store
+
+# Conductor
+.context/
+.conductor/

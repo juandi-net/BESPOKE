@@ -1,0 +1,46 @@
+[project]
+name = "bespoke"
+version = "0.1.0"
+description = "Distill frontier model reasoning into local specialist adapters"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+dependencies = [
+    # Core
+    "openai>=1.60.0",              # Unified LLM API client
+    "onnxruntime>=1.20.0",         # EmbeddingGemma inference
+    "sqlite-vec>=0.1.6",           # Vector search extension for SQLite
+    "pyyaml>=6.0",                 # Benchmark file parsing
+    "requests>=2.31.0",            # HTTP client for server health checks
+    "huggingface-hub>=0.27.0",     # Model downloads
+    "transformers>=4.48.0",        # Tokenizers, model config
+
+    # Training
+    "mlx>=0.22.0",                 # Apple Silicon ML framework
+    "mlx-lm>=0.22.0",             # LLM training and inference on MLX
+    "peft>=0.14.0",                # Adapter format conversion (DoRA/LoRA)
+
+    # Orchestration
+    "watchdog>=6.0.0",             # File system watcher for Stage 1 capture
+
+    # Utilities
+    "numpy>=1.26.0",
+    "tqdm>=4.66.0",
+    "pycookiecheat>=0.7.0",        # Claude Desktop cookie extraction
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.8.0",
+]
+
+[project.scripts]
+bespoke = "bespoke.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["bespoke*"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
