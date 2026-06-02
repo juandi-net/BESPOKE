@@ -74,3 +74,55 @@ def trajectory_features(turns):
 
     return {"n_turns": n, "ended_in_accept": ended_in_accept,
             "mean_gap_s": mean_gap_s, "cache_read_ratio": cache_read_ratio}
+
+
+def _cosine_dist(a, b):
+    if a is None or b is None:
+        return 0.0
+    na, nb = float(np.linalg.norm(a)), float(np.linalg.norm(b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return float(1.0 - np.dot(a, b) / (na * nb))
+
+
+def _gap_seconds(prev, cur):
+    a, b = _parse_ts(prev.get("ts")), _parse_ts(cur.get("ts"))
+    if a is None or b is None:
+        return 0.0
+    return (b - a).total_seconds()
+
+
+def segment_conversation(turns, gap_s=1800, emb_jump=0.35, cache_aware=True):
+    """Split a session into coherent sub-conversations using three deterministic signals.
+
+    A boundary before a turn requires a large TIME GAP from the previous turn AND a large
+    EMBEDDING jump (topic shift). The CACHE signal modulates this (cache_aware):
+      - cache READ on the turn (warm = user returned within the prompt-cache TTL) → suppress:
+        the gap wasn't a real absence, keep it one conversation.
+      - cache MISS after a gap (cold = user was away) → strengthen: a single signal (gap OR
+        jump) suffices.
+    Returns a list of sub-conversations (each a list of turns).
+
+    NOTE: thresholds/logic are intentionally simple here; they get tuned on real conversations
+    at the Phase 5 validation gate.
+    """
+    if not turns:
+        return []
+    segments = [[turns[0]]]
+    for i in range(1, len(turns)):
+        prev, cur = turns[i - 1], turns[i]
+        big_gap = _gap_seconds(prev, cur) > gap_s
+        big_jump = _cosine_dist(prev.get("emb"), cur.get("emb")) > emb_jump
+        boundary = big_gap and big_jump
+        if cache_aware:
+            warm = (cur.get("cache_read") or 0) > 0
+            cold_miss = (cur.get("cache_creation") or 0) > 0 and not warm
+            if warm:
+                boundary = False                 # present (returned within TTL) → continuous
+            elif cold_miss:
+                boundary = big_gap or big_jump    # cold gap confirmed → one signal is enough
+        if boundary:
+            segments.append([cur])
+        else:
+            segments[-1].append(cur)
+    return segments
