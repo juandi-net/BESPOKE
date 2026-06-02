@@ -29,6 +29,8 @@ class Interaction:
     output_tokens: Optional[int]
     timestamp: str             # ISO format
     user_followup: Optional[str] = None
+    cache_read_tokens: Optional[int] = None       # prompt-cache READ (user present/warm)
+    cache_creation_tokens: Optional[int] = None   # prompt-cache MISS (cold gap = boundary)
 
 
 def ingest_extraction_jsonl(jsonl_path: Path) -> List[Interaction]:
@@ -84,6 +86,8 @@ def ingest_extraction_jsonl(jsonl_path: Path) -> List[Interaction]:
                 output_tokens=record.get("output_tokens"),
                 timestamp=record.get("timestamp", datetime.now().isoformat()),
                 user_followup=record.get("user_followup"),
+                cache_read_tokens=record.get("cache_read_input_tokens"),
+                cache_creation_tokens=record.get("cache_creation_input_tokens"),
             ))
 
     return interactions
@@ -177,6 +181,8 @@ def ingest_claude_code_direct(session_path: Path) -> List[Interaction]:
     resp_model = "unknown"
     resp_input_tokens = None
     resp_output_tokens = None
+    resp_cache_read = None
+    resp_cache_creation = None
 
     with open(session_path, 'r') as f:
         for line in f:
@@ -204,6 +210,8 @@ def ingest_claude_code_direct(session_path: Path) -> List[Interaction]:
                             input_tokens=resp_input_tokens,
                             output_tokens=resp_output_tokens,
                             timestamp=current_user_timestamp,
+                            cache_read_tokens=resp_cache_read,
+                            cache_creation_tokens=resp_cache_creation,
                         ))
 
                 # Start new turn
@@ -213,6 +221,8 @@ def ingest_claude_code_direct(session_path: Path) -> List[Interaction]:
                 resp_model = "unknown"
                 resp_input_tokens = None
                 resp_output_tokens = None
+                resp_cache_read = None
+                resp_cache_creation = None
 
             elif current_user_text is not None:
                 msg_type = msg.get("type", "")
@@ -228,6 +238,10 @@ def ingest_claude_code_direct(session_path: Path) -> List[Interaction]:
                         resp_input_tokens = (resp_input_tokens or 0) + usage["input_tokens"]
                     if usage.get("output_tokens"):
                         resp_output_tokens = (resp_output_tokens or 0) + usage["output_tokens"]
+                    if usage.get("cache_read_input_tokens"):
+                        resp_cache_read = (resp_cache_read or 0) + usage["cache_read_input_tokens"]
+                    if usage.get("cache_creation_input_tokens"):
+                        resp_cache_creation = (resp_cache_creation or 0) + usage["cache_creation_input_tokens"]
                 elif msg_type in ("user", "human"):
                     # tool_result messages (not real user turns) — include in response
                     content = _extract_all_content(msg)
@@ -249,6 +263,8 @@ def ingest_claude_code_direct(session_path: Path) -> List[Interaction]:
                 input_tokens=resp_input_tokens,
                 output_tokens=resp_output_tokens,
                 timestamp=current_user_timestamp,
+                cache_read_tokens=resp_cache_read,
+                cache_creation_tokens=resp_cache_creation,
             ))
 
     # Add followups (next user turn's text = feedback signal)

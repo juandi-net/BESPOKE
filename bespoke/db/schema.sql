@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS interactions (
     -- Token counts
     input_tokens INTEGER,
     output_tokens INTEGER,
+    cache_read_tokens INTEGER,       -- prompt-cache READ (context still warm = user present)
+    cache_creation_tokens INTEGER,   -- prompt-cache MISS (cold = gap/away = boundary signal)
 
     -- Feedback signals
     user_followup TEXT,                  -- Next real user message (accept/reject signal for Stage 2a)

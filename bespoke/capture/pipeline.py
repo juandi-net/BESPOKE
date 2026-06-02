@@ -60,8 +60,9 @@ def capture_interaction(
             provider, model, source, session_id,
             system_prompt, user_message, assistant_response,
             user_followup,
-            input_tokens, output_tokens, captured_at, content_hash
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            input_tokens, output_tokens, captured_at, content_hash,
+            cache_read_tokens, cache_creation_tokens
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         interaction.provider,
         interaction.model,
@@ -75,6 +76,8 @@ def capture_interaction(
         interaction.output_tokens,
         interaction.timestamp,
         content_hash,
+        interaction.cache_read_tokens,
+        interaction.cache_creation_tokens,
     ))
 
     if cursor.rowcount == 1:
