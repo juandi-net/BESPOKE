@@ -368,7 +368,14 @@ def cmd_trajectory(args):
 
 
 def cmd_benchmark_interview(args):
-    """Interactive benchmark interview."""
+    """Benchmark interview — geometric/local by default; --cloud for the legacy LLM one."""
+    if not getattr(args, "cloud", False):
+        # Default: warm, deterministic, LOCAL — no cloud, no LLM.
+        from bespoke.benchmark.geometric_interview import run_geometric_interview
+        run_geometric_interview()
+        return
+
+    # Legacy cloud LLM interview (opt-in via --cloud).
     import json
     from bespoke.benchmark.prescan import generate_prescan_summary
     from bespoke.benchmark.interview import run_interview
@@ -456,7 +463,9 @@ def main():
     benchmark_sub = p_benchmark.add_subparsers(dest="benchmark_command")
 
     p_interview = benchmark_sub.add_parser("interview",
-                                           help="Define your quality standards")
+                                           help="Define your quality standards (geometric/local)")
+    p_interview.add_argument("--cloud", action="store_true",
+                             help="Use the legacy cloud LLM interview instead of the local geometric one")
     p_interview.set_defaults(func=cmd_benchmark_interview)
 
     args = parser.parse_args()
