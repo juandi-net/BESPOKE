@@ -36,13 +36,25 @@ Capture → Extract → Train → Serve → Repeat
 
 **Capture** — Ingest interactions from Claude Code, claude.ai (web), Cursor, and other AI tools. Compute embeddings. Write to a local SQLite warehouse. Web capture extracts cookies from Claude Desktop's Keychain for authentication and supports incremental syncing.
 
-**Extract** — An LLM classifies each interaction nightly: domain, quality, reasoning primitives, user feedback signals. Produces clean training pairs. A second pass mines cross-corpus patterns and updates curriculum weights weekly.
+**Extract** — Curation runs **locally and geometrically — no cloud LLM**. Sessions are segmented into coherent conversations (time gaps + embedding shifts + prompt-cache presence), training pairs are formed mechanically (the answer is already in the transcript), and each is labeled by where it sits in latent space: quality from a linear preference probe, domain from clustering, feedback from your own accept/reject signals. Curriculum weights come from community detection (Leiden), not a weekly LLM pass.
 
 **Train** — Every night, LoRA fine-tuning runs autonomously on the curated data. If the adapter improves on the local geometric eval (label propagation + linear preference probe + programmatic gates, fused by a meta-scorer — no API calls), it ships. If not, it reverts. No human, and no paid judge, in the loop.
 
 **Serve** — llama.cpp serves the base model with adapters hot-swapped per query. Any tool that speaks the OpenAI API format can use it.
 
 **Repeat** — Your continued frontier model interactions and your interactions with deployed adapters both feed back into capture. Frontier sessions bring fresh reasoning patterns. Adapter sessions generate accept/reject signals that refine training. The benchmark tracks drift in your standards. Three curves compound: the warehouse grows, the benchmark refines, the adapters improve.
+
+## Sovereign by Design — geometry instead of a cloud judge
+
+Most "self-improving" AI systems quietly depend on a paid cloud model to *judge* their own output every cycle. That isn't a closed loop — it's a meter that never stops running, and it ships your data to someone else's server to grade it.
+
+BESPOKE replaces that judgment with **geometry**. Your quality standards aren't an opinion an API has to re-derive each night — once *you* are fixed, your accepted answers form a low-dimensional, separable structure in latent space. Judging becomes *measuring*, and measuring is cheap, deterministic, and local:
+
+- **Curate** without a cloud LLM — segment, copy, and label by position in latent space.
+- **Evaluate** keep/revert with an ensemble of orthogonal signals — programmatic gates, a linear preference probe, graph label propagation, and **time** (how fast you accept, how long you engage) — fused by a small local model. No API calls.
+- **Stay private** — your interactions, weights, and standards never leave `~/.bespoke/`.
+
+The frontier still teaches BESPOKE — but only through the sessions you already generate by working, never through extra cloud calls re-sending your data to be graded. The result runs on the box on your desk (and, eventually, in your pocket), at the cost of electricity, not tokens.
 
 ## V0 Target
 
