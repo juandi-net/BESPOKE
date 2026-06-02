@@ -4,6 +4,20 @@ Compound frontier model interactions into bespoke AI experiences.
 
 Every frontier model interaction generates high-quality reasoning, problem decomposition, tradeoff analysis, and structured solutions that disappear when the session ends. BESPOKE captures those demonstrations, extracts the reasoning patterns, and compresses them into local adapters that concentrate all capacity on the domains you actually work in.
 
+## ⚠️ Before you start: your AI tools are deleting your history
+
+This isn't hypothetical — **Claude Code auto-deletes your session transcripts.** By default it keeps only the **last 30 days** (`cleanupPeriodDays`) and removes older `.jsonl` files at startup. Your reasoning, decisions, and accept/reject signals are quietly thrown away on a rolling basis. *That* vanishing history is exactly what BESPOKE compresses into a model — so you have to preserve it **before it's gone.**
+
+Do these two things **now**:
+
+1. **Stop the deletion.** Set a long retention in `~/.claude/settings.json` (a large number ≈ "keep forever"):
+   ```json
+   { "cleanupPeriodDays": 365000 }
+   ```
+2. **Capture regularly** — run `bespoke capture` often (or on a schedule) so interactions reach your warehouse before any tool's cleanup window closes. The warehouse in `~/.bespoke/` is permanent; the source files are not.
+
+If you've already been using Claude Code for a while, **most of your raw history beyond the last ~30 days is already gone from disk** — only what BESPOKE (or an export) captured still exists. Start capturing today.
+
 ## Usage
 
 ```bash
