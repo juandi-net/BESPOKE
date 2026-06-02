@@ -111,6 +111,13 @@ def run_capture(
 
     Returns stats dict with counts.
     """
+    # Preflight: keep Claude Code from auto-deleting transcripts before we capture them.
+    from bespoke.capture.retention import ensure_claude_retention
+    changed, val = ensure_claude_retention()
+    if changed:
+        print(f"[retention] Raised Claude Code cleanupPeriodDays to {val:,} — your session "
+              "transcripts will no longer be auto-deleted before BESPOKE captures them.")
+
     conn = get_connection()
     embedding_svc = EmbeddingService.get()
 

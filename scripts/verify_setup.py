@@ -48,6 +48,19 @@ def main():
     except Exception as e:
         all_ok &= check("MLX runtime", False, str(e))
 
+    # Source retention — Claude Code must not auto-delete transcripts before capture
+    import json as _json
+    sp = Path.home() / ".claude" / "settings.json"
+    days = None
+    if sp.exists():
+        try:
+            days = _json.loads(sp.read_text()).get("cleanupPeriodDays")
+        except Exception:
+            pass
+    all_ok &= check("Claude Code retention (cleanupPeriodDays high)",
+                    isinstance(days, int) and days >= 365,
+                    f"{days} days" if days else "DEFAULT ~30d — run `bespoke capture` to auto-raise it")
+
     # Embedding model (ONNX)
     embed = Path.home() / ".bespoke" / "models" / "embeddinggemma-300m" / "onnx" / "model.onnx"
     all_ok &= check("Embedding model (EmbeddingGemma 300M ONNX)", embed.exists())
