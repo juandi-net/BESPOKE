@@ -1,6 +1,22 @@
 # tests/test_extract_run.py
 """Track 2 / go-local: geometric extract orchestrator end-to-end (no cloud)."""
+from unittest.mock import patch, MagicMock
+
 from sqlite_vec import serialize_float32
+
+
+class TestCliRoutesLocal:
+    def test_cmd_extract_uses_geometric_when_flag_off(self):
+        from bespoke import cli
+        stats = {"interactions_labeled": 0, "pairs_written": 0,
+                 "tangled_sessions": 0, "probe_trained": False}
+        with patch("bespoke.extract.run.run_geometric_extract", return_value=stats) as geo, \
+             patch("bespoke.teach.stage2a.run_stage_2a") as llm, \
+             patch("bespoke.config.config") as cfg:
+            cfg.pipeline.use_llm_extract = False
+            cli.cmd_extract(MagicMock(reset=False))
+        geo.assert_called_once()
+        llm.assert_not_called()
 
 
 def _ins(db, sid, ts, um, ar, followup, emb):

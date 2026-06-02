@@ -104,6 +104,10 @@ class PipelineConfig:
     # (calibration/audit only). With it off, eval ground truth = accept/reject + tests.
     use_llm_judge: bool = False
 
+    # Extract mode: geometric/local extract is the default. The old cloud LLM classifier
+    # (CLIProxy → Claude) is opt-in only. With it off, the pipeline makes ZERO cloud calls.
+    use_llm_extract: bool = False
+
 
 @dataclass
 class BespokeConfig:

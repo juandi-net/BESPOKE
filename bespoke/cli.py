@@ -104,8 +104,18 @@ def cmd_extract(args):
         conn.close()
         print("Reset complete. All Stage 1 data preserved.")
 
-    from bespoke.teach.stage2a import run_stage_2a
-    run_stage_2a()
+    from bespoke.config import config
+    if config.pipeline.use_llm_extract:
+        from bespoke.teach.stage2a import run_stage_2a
+        run_stage_2a()
+    else:
+        from bespoke.extract.run import run_geometric_extract
+        print("Geometric extract (local, no cloud)...")
+        stats = run_geometric_extract()
+        print(f"  {stats['interactions_labeled']} labeled, "
+              f"{stats['pairs_written']} pairs written, "
+              f"{stats['tangled_sessions']} tangled sessions, "
+              f"probe_trained={stats['probe_trained']}")
 
 
 def cmd_train(args):
@@ -234,8 +244,12 @@ def cmd_run(args):
     capture_stats = run_capture()
     print(f"Captured {capture_stats['interactions_captured']} new interactions")
 
-    # Step 2: Benchmark (if not initialized and not skipped)
-    if not getattr(args, "skip_interview", False) and not benchmark_exists():
+    # Step 2: Benchmark interview — ONLY in cloud mode (the interview uses CLIProxy).
+    # In the default local mode the geometric eval needs no benchmark.yaml, so we skip it
+    # to keep the pipeline 100% local (zero cloud calls).
+    if (config.pipeline.use_llm_extract
+            and not getattr(args, "skip_interview", False)
+            and not benchmark_exists()):
         print("\n" + "=" * 50)
         print("STEP 2: Benchmark Interview")
         print("=" * 50)
@@ -255,7 +269,15 @@ def cmd_run(args):
     pairs_before = conn.execute("SELECT COUNT(*) FROM training_pairs").fetchone()[0]
     conn.close()
 
-    extract_stats = run_stage_2a()
+    if config.pipeline.use_llm_extract:
+        extract_stats = run_stage_2a()
+    else:
+        from bespoke.extract.run import run_geometric_extract
+        print("Geometric extract (local, no cloud)...")
+        extract_stats = run_geometric_extract()
+        print(f"  {extract_stats['interactions_labeled']} labeled, "
+              f"{extract_stats['pairs_written']} pairs, "
+              f"probe_trained={extract_stats['probe_trained']}")
 
     conn = get_connection()
     pairs_after = conn.execute("SELECT COUNT(*) FROM training_pairs").fetchone()[0]
