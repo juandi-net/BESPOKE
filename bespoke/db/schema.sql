@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS interactions (
     user_followup TEXT,                  -- Next real user message (accept/reject signal for Stage 2a)
     feedback_class TEXT,                 -- 'strong_accept', 'accept', 'neutral', 'reject', 'strong_reject'
     feedback_raw TEXT,                   -- Stage 2a's reasoning for the feedback classification
+    feedback_confidence REAL DEFAULT 1.0,  -- down-weight noisy/late-session accept-reject signals
 
     -- Stage 2a outputs
     domain TEXT,                         -- 'code', 'strategy', 'planning', 'organizing', etc.

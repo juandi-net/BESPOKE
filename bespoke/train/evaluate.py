@@ -184,6 +184,62 @@ def generate_with_mlx(
     return responses
 
 
+def _geometric_score_outputs(adapter_name, eval_prompts, specialist_outputs, benchmark):
+    """Score outputs with the geometric ensemble (no LLM). Returns a scorecard dict.
+
+    Fuses programmatic gates + label propagation (relational) + linear preference probe
+    (intrinsic), seeded by the user's revealed accept/reject labels AND the benchmark
+    interview's stated good/bad anchor. Logs leave-one-out accuracy as a stability meter.
+    """
+    import numpy as np
+    from bespoke.db.init import get_connection
+    from bespoke.capture.embeddings import EmbeddingService
+    from bespoke.eval.signals import get_labeled_embeddings
+    from bespoke.eval.propagation import propagate_scores, leave_one_out_accuracy
+    from bespoke.eval.probe import LinearPreferenceProbe
+    from bespoke.eval.anchor import extract_anchor_examples, embed_anchor
+    from bespoke.eval.ensemble import score_items
+
+    svc = EmbeddingService.get()
+    conn = get_connection()
+    ids, X, y = get_labeled_embeddings(conn)
+    conn.close()
+
+    # Fold in stated-preference anchor seeds (cold start).
+    a_texts, a_labels = extract_anchor_examples(benchmark)
+    Xa, ya = embed_anchor(a_texts, a_labels, embedding_svc=svc)
+    if len(Xa):
+        X = np.vstack([X, Xa]) if len(X) else Xa
+        y = np.concatenate([y, ya]) if len(y) else ya
+
+    # Fit the probe on labeled rows (revealed + stated). Stability meter for logging.
+    probe = None
+    stability = None
+    labeled = y != -1
+    if labeled.sum() >= 4 and len(set(y[labeled].tolist())) == 2:
+        probe = LinearPreferenceProbe().fit(X[labeled], y[labeled])
+        stability = leave_one_out_accuracy(X[labeled], y[labeled])
+
+    # Embed eval outputs; propagate using the labeled corpus + each output appended.
+    out_embs = [svc.embed(o)[0] for o in specialist_outputs]
+    items = []
+    prop_scores = []
+    for ep, out, emb in zip(eval_prompts, specialist_outputs, out_embs):
+        if len(X):
+            Xq = np.vstack([X, emb.reshape(1, -1)])
+            yq = np.concatenate([y, np.array([-1])])
+            prop_scores.append(float(propagate_scores(Xq, yq)[-1]))
+        else:
+            prop_scores.append(0.5)
+        items.append({"prompt": ep["user_message"], "output": out,
+                      "domain": ep.get("domain"), "embedding": emb})
+
+    card = score_items(items, probe=probe, propagation_scores=prop_scores)
+    card["adapter_name"] = adapter_name
+    card["stability_meter"] = stability  # leave-one-out accuracy; watch over time
+    return card
+
+
 def run_evaluation(
     adapter_name: str,
     domain: str = None,
@@ -222,7 +278,14 @@ def run_evaluation(
             output = generate_specialist_response(ep["user_message"], port=server_port)
             specialist_outputs.append(output)
 
-    # Judge each response
+    # Default path: local geometric ensemble (no LLM judge). See docs/bespoke-eval-architecture.md.
+    if not config.pipeline.use_llm_judge:
+        card = _geometric_score_outputs(
+            adapter_name, eval_prompts, specialist_outputs, benchmark)
+        card["adapter_name"] = adapter_name
+        return card
+
+    # Opt-in LLM-judge path (calibration/audit only).
     results = []
     gate_pass_count = 0
 
@@ -274,6 +337,11 @@ def run_evaluation(
 
 def compare_scorecards(current: dict, previous: dict) -> dict:
     """Compare two scorecards and make a keep/revert decision."""
+    # Geometric ensemble scorecards carry a scalar 'reward'.
+    if "reward" in current and "reward" in previous:
+        from bespoke.eval.ensemble import compare_geometric
+        return compare_geometric(current, previous)
+
     curr_rv = current.get("reward_vector", [])
     prev_rv = previous.get("reward_vector", [])
 

@@ -34,9 +34,19 @@ def main():
     db_path = Path.home() / ".bespoke" / "bespoke.db"
     all_ok &= check("Database exists", db_path.exists(), str(db_path))
 
-    # Models
-    gguf = Path.home() / ".bespoke" / "models" / "qwen3.5-4b-gguf" / "Qwen3.5-4B-Q4_K_M.gguf"
-    all_ok &= check("Base model (GGUF)", gguf.exists(), f"{gguf.stat().st_size / 1e9:.2f} GB" if gguf.exists() else "MISSING")
+    # Base model (MLX) — default is LFM2.5-1.2B-Instruct; swap freely via config.
+    from bespoke.config import config
+    mlx_model = config.base_model.training_model_path
+    all_ok &= check("Base model (MLX)", mlx_model.exists(),
+                    str(mlx_model) if mlx_model.exists() else "MISSING")
+
+    # MLX runtime — standard upstream MLX (the dense base needs no fork)
+    try:
+        import mlx.core as mx
+        _ = mx.array([1, 2, 3]).sum()
+        all_ok &= check("MLX runtime", True)
+    except Exception as e:
+        all_ok &= check("MLX runtime", False, str(e))
 
     # Embedding model (ONNX)
     embed = Path.home() / ".bespoke" / "models" / "embeddinggemma-300m" / "onnx" / "model.onnx"

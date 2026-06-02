@@ -15,13 +15,19 @@ dependencies = [
     "huggingface-hub>=0.27.0",     # Model downloads
     "transformers>=4.48.0",        # Tokenizers, model config
 
-    # Training
-    "mlx>=0.22.0",                 # Apple Silicon ML framework
-    "mlx-lm>=0.22.0",             # LLM training and inference on MLX
-    "peft>=0.14.0",                # Adapter format conversion (DoRA/LoRA)
+    # Training — standard upstream MLX (the LFM2.5 dense base needs no fork; the old
+    # PrismML fork was only required for the deprecated 1-bit Bonsai base).
+    "mlx>=0.31.0",                 # Array framework (pulls mlx-metal on Apple Silicon)
+    "mlx-lm>=0.31.0",              # LLM training and inference on MLX (LFM2 support)
+    "peft>=0.14.0",                # Adapter format conversion (LoRA)
 
     # Orchestration
     "watchdog>=6.0.0",             # File system watcher for Stage 1 capture
+
+    # Geometric eval ensemble (Track 1)
+    "scikit-learn>=1.4.0",         # LabelSpreading, LogisticRegression
+    "python-igraph>=0.11.0",       # graph construction for community detection
+    "leidenalg>=0.10.0",           # Leiden community detection (curriculum weighting)
 
     # Utilities
     "numpy>=1.26.0",

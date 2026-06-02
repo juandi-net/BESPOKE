@@ -42,3 +42,7 @@ docs/
 # Conductor
 .context/
 .conductor/
+
+# Internal R&D — kept local, not published (like docs/)
+research/
+strategy/LEARNING.md

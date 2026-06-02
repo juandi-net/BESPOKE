@@ -38,7 +38,7 @@ Capture → Extract → Train → Serve → Repeat
 
 **Extract** — An LLM classifies each interaction nightly: domain, quality, reasoning primitives, user feedback signals. Produces clean training pairs. A second pass mines cross-corpus patterns and updates curriculum weights weekly.
 
-**Train** — Every night, DoRA fine-tuning runs autonomously on the curated data. An evaluation benchmark, built from your stated preferences and your actual accept/reject behavior, governs keep/revert. If the adapter improves, it ships. If not, it reverts. No human in the loop.
+**Train** — Every night, LoRA fine-tuning runs autonomously on the curated data. If the adapter improves on the local geometric eval (label propagation + linear preference probe + programmatic gates, fused by a meta-scorer — no API calls), it ships. If not, it reverts. No human, and no paid judge, in the loop.
 
 **Serve** — llama.cpp serves the base model with adapters hot-swapped per query. Any tool that speaks the OpenAI API format can use it.
 
@@ -47,11 +47,12 @@ Capture → Extract → Train → Serve → Repeat
 ## V0 Target
 
 - **Hardware:** Mac Mini M4, 16GB unified memory
-- **Base model:** Qwen3.5-4B (Q4_K_M, ~2.7GB)
-- **Training:** MLX with QLoRA + DoRA + rsLoRA
+- **Base model:** LFM2.5-1.2B-Instruct (dense, 32K ctx, ~719MB on-device; Apache-2.0 fallback Qwen3-4B)
+- **Training:** MLX with LoRA
 - **Embeddings:** EmbeddingGemma 300M ONNX (768-dim, 2K context)
 - **Database:** SQLite + sqlite-vec
-- **Inference:** llama.cpp with Metal GPU acceleration
+- **Eval:** local geometric ensemble (scikit-learn LabelSpreading + LogisticRegression probe + Leiden), no LLM judge
+- **Inference:** llama.cpp with LoRA hot-swap
 
 ## Status
 

@@ -174,7 +174,7 @@ def run_search(deadline: str = "06:00", max_experiments: int = None, num_eval_pr
         "min_quality": ["high", "medium"],
         "domain_filter": domains,
         "recency_days": [None, 60, 30],
-        "rank": [8, 16],
+        "rank": [8, 16, 32],        # rank 32 fits comfortably on 1-bit Bonsai 8B
         "lr": [1e-4, 2e-4],
         "epochs": [1, 2],
     }

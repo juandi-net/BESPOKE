@@ -67,7 +67,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
     # Column migrations
     for col in ["content_hash TEXT", "user_followup TEXT",
-                "stage2a_fail_count INTEGER DEFAULT 0"]:
+                "stage2a_fail_count INTEGER DEFAULT 0",
+                "feedback_confidence REAL DEFAULT 1.0"]:
         try:
             conn.execute(f"ALTER TABLE interactions ADD COLUMN {col}")
         except sqlite3.OperationalError:

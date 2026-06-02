@@ -35,16 +35,18 @@ class EmbeddingConfig:
 @dataclass
 class BaseModelConfig:
     """Base model configuration for training and inference."""
-    # Training (MLX format)
-    training_model_path: Path = Path.home() / ".bespoke" / "models" / "qwen3.5-4b-mlx"
+    # Training (MLX) — LFM2.5-1.2B-Instruct dense base.
+    # Use the published MLX 8-bit build for Apple Silicon:
+    #   lmstudio-community/LFM2.5-1.2B-Instruct-MLX-8bit
+    training_model_path: Path = Path.home() / ".bespoke" / "models" / "lfm2.5-1.2b-instruct-mlx"
 
-    # Inference (GGUF format) — source: unsloth/Qwen3.5-4B-GGUF on HuggingFace
-    inference_model_path: Path = Path.home() / ".bespoke" / "models" / "qwen3.5-4b-gguf" / "Qwen3.5-4B-Q4_K_M.gguf"
+    # Inference (GGUF Q4_0 format) — phone-deployable build (~719MB on-device)
+    inference_model_path: Path = Path.home() / ".bespoke" / "models" / "lfm2.5-1.2b-gguf" / "LFM2.5-1.2B-Instruct-Q4_0.gguf"
 
     # Serving
     llama_server_port: int = 8080
-    context_size: int = 4096  # Start conservative, increase as needed
-    gpu_layers: int = 99      # Offload everything to GPU
+    context_size: int = 32768  # LFM2.5-1.2B native context
+    gpu_layers: int = 99       # Offload everything to GPU
 
 
 @dataclass
@@ -63,7 +65,7 @@ class TrainingConfig:
     dpo_batch_size: int = 2
 
     # Adapter configuration
-    use_dora: bool = True
+    use_dora: bool = False  # LoRA preferred — 380MB lighter, both confirmed working on 1-bit
     use_rslora: bool = True
     lora_plus_ratio: float = 10.0  # B matrix LR = A matrix LR * this
 
@@ -97,6 +99,10 @@ class PipelineConfig:
     # Quality thresholds
     min_quality_for_sft: str = "medium"   # Include medium and high
     min_quality_for_dpo: str = "high"     # DPO only on high-quality pairs
+
+    # Eval mode: geometric ensemble is the default judge. External LLM judge is opt-in
+    # (calibration/audit only). With it off, eval ground truth = accept/reject + tests.
+    use_llm_judge: bool = False
 
 
 @dataclass
