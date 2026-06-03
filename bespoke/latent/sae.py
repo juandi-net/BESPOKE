@@ -92,7 +92,7 @@ def top_examples_for_feature(Z, ids, feature, top=8):
     """Which items most strongly activate a feature → read its meaning (naming)."""
     col = Z[:, feature]
     order = np.argsort(-col)
-    return [(ids[i], float(col[i])) for i in order[:top] if col[i] > 0]
+    return [(int(ids[i]), float(col[i])) for i in order[:top] if col[i] > 0]
 
 
 def feature_label_separation(Z, y):
@@ -137,9 +137,12 @@ def main():
         print("\nTop features that separate ACCEPT vs REJECT (the confound test):")
         for f in order:
             ex = top_examples_for_feature(Z, ids, int(f), top=2)
-            sample = conn.execute(
-                "SELECT substr(user_message,1,70) FROM interactions WHERE id=?",
-                (ex[0][0],)).fetchone()[0] if ex else ""
+            sample = ""
+            if ex:
+                row = conn.execute(
+                    "SELECT substr(user_message,1,70) FROM interactions WHERE id=?",
+                    (int(ex[0][0]),)).fetchone()
+                sample = (row[0] or "") if row else ""
             print(f"  feat {int(f):>5}: sep={sep[f]:.3f}  e.g. “{sample}”")
     conn.close()
 
