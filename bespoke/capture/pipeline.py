@@ -102,6 +102,44 @@ def capture_interaction(
         return None
 
 
+def reembed_all(conn=None, embedding_svc: Optional[EmbeddingService] = None,
+                batch_size: int = 256) -> dict:
+    """Re-embed EVERY interaction with the current (MLX) embedding service and rebuild
+    vec_interactions. Needed after switching embedding backends so the whole corpus lives in
+    one consistent vector space. Batched on the GPU — fast.
+    """
+    close = conn is None
+    if conn is None:
+        conn = get_connection()
+    owns_svc = embedding_svc is None
+    if embedding_svc is None:
+        embedding_svc = EmbeddingService.get()
+
+    rows = conn.execute(
+        "SELECT id, user_message, assistant_response FROM interactions ORDER BY id"
+    ).fetchall()
+    ids = [r["id"] for r in rows]
+    texts = [f"{r['user_message']}\n{r['assistant_response']}" for r in rows]
+
+    conn.execute("DELETE FROM vec_interactions")
+    done = 0
+    pbar = tqdm(range(0, len(texts), batch_size), unit="batch", desc="re-embedding")
+    for s in pbar:
+        embs = embedding_svc.embed_many(texts[s:s + batch_size])
+        for iid, emb in zip(ids[s:s + batch_size], embs):
+            conn.execute("INSERT INTO vec_interactions (rowid, interaction_embedding) VALUES (?, ?)",
+                         (iid, serialize_float32(emb.tolist())))
+            done += 1
+        conn.commit()
+        pbar.set_postfix_str(f"{done}/{len(ids)}")
+
+    if owns_svc:
+        EmbeddingService.unload()
+    if close:
+        conn.close()
+    return {"reembedded": done}
+
+
 def run_capture(
     session_dir: Optional[Path] = None,
     jsonl_path: Optional[Path] = None,

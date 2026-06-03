@@ -52,6 +52,13 @@ def benchmark_exists() -> bool:
 
 def cmd_capture(args):
     """Stage 1: Ingest interactions, compute embeddings, write to DB."""
+    if getattr(args, "reembed", False):
+        from bespoke.capture.pipeline import reembed_all
+        print("Re-embedding the whole corpus with MLX (GPU)...")
+        stats = reembed_all()
+        print(f"Re-embedded {stats['reembedded']} interactions.")
+        return
+
     web = getattr(args, "web", False)
     all_sources = getattr(args, "all", False)
 
@@ -411,6 +418,8 @@ def main():
                            help="Capture claude.ai conversations")
     p_capture.add_argument("--all", action="store_true",
                            help="Capture all sources (Claude Code + claude.ai)")
+    p_capture.add_argument("--reembed", action="store_true",
+                           help="Re-embed the whole corpus with MLX (after an embedding-backend change)")
     p_capture.set_defaults(func=cmd_capture)
 
     # extract
