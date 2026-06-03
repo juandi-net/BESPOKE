@@ -8,7 +8,7 @@ license = {text = "MIT"}
 dependencies = [
     # Core
     "openai>=1.60.0",              # Unified LLM API client
-    "onnxruntime>=1.20.0",         # EmbeddingGemma inference
+    "mlx-embeddings>=0.1.0",       # EmbeddingGemma on Apple Silicon GPU (MLX) — fast, batched
     "sqlite-vec>=0.1.6",           # Vector search extension for SQLite
     "pyyaml>=6.0",                 # Benchmark file parsing
     "requests>=2.31.0",            # HTTP client for server health checks

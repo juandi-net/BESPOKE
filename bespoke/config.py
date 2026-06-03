@@ -22,14 +22,10 @@ class LLMConfig:
 
 @dataclass
 class EmbeddingConfig:
-    """Embedding model configuration."""
-    model_path: Path = Path.home() / ".bespoke" / "models" / "embeddinggemma-300m"
-    onnx_path: Path = field(default=None)
+    """Embedding model configuration — MLX (Apple Silicon GPU) via mlx-embeddings."""
+    # MLX port of EmbeddingGemma 300M (same model, native Apple Silicon, ~8x faster than ONNX-CPU).
+    model_id: str = "mlx-community/embeddinggemma-300m-bf16"
     dimension: int = 768
-
-    def __post_init__(self):
-        if self.onnx_path is None:
-            self.onnx_path = self.model_path / "onnx" / "model.onnx"
 
 
 @dataclass
