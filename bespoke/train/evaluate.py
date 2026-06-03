@@ -172,10 +172,14 @@ def generate_with_mlx(
 
     responses = []
     for prompt in prompts:
-        response = mlx_lm.generate(
-            model, tokenizer, prompt=prompt,
-            max_tokens=2048, temp=0.7,
-        )
+        # Format as an instruct turn via the chat template (LFM2.5-Instruct).
+        try:
+            p = tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt}], add_generation_prompt=True)
+        except Exception:
+            p = prompt
+        # mlx-lm 0.31: greedy decode (temp removed from generate; deterministic = better for eval).
+        response = mlx_lm.generate(model, tokenizer, p, max_tokens=512, verbose=False)
         responses.append(response)
 
     del model, tokenizer

@@ -48,8 +48,11 @@ def run_sft_training(
     adapter_dir = config.adapters_dir / adapter_name / "sft"
     adapter_dir.mkdir(parents=True, exist_ok=True)
 
-    # iters from epochs × (train_examples / batch), capped to keep runs bounded.
-    batch = config.training.sft_batch_size
+    # 16GB-safe settings: batch 4 / all-16-layers / seq 1024 OOMs the M4's Metal GPU. Use batch 1,
+    # fewer layers, shorter seq, and grad checkpointing (trades compute for memory).
+    batch = 1
+    num_layers = 8
+    max_seq = 512
     try:
         n_train = sum(1 for _ in open(train_path))
     except OSError:
@@ -70,13 +73,14 @@ def run_sft_training(
         "--data", str(train_path.parent),
         "--adapter-path", str(adapter_dir),
         "--fine-tune-type", "dora" if config.training.use_dora else "lora",
-        "--num-layers", "-1",
+        "--num-layers", str(num_layers),
         "--learning-rate", str(lr),
         "--batch-size", str(batch),
         "--iters", str(iters),
-        "--max-seq-length", "1024",
+        "--max-seq-length", str(max_seq),
         "--steps-per-eval", "200",
         "--save-every", "200",
+        "--grad-checkpoint",
         "-c", str(lora_cfg_path),
     ]
 
