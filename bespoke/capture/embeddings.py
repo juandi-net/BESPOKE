@@ -10,8 +10,11 @@ from typing import List, Optional, Tuple
 
 from bespoke.config import config
 
-CONTEXT = 2048   # EmbeddingGemma context window
-BATCH = 32       # texts per MLX forward pass
+# Truncation cap: the user message + start of the answer carry the interaction's signal;
+# trailing tool/code dumps are low-signal and blow up the forward-pass cost. 512 is ~4x cheaper
+# than 2048 with little quality loss for retrieval/clustering/probe. Tunable.
+CONTEXT = 512
+BATCH = 64       # texts per MLX forward pass (length-bucketed so padding stays small)
 
 
 class EmbeddingService:
@@ -56,11 +59,22 @@ class EmbeddingService:
         return emb.astype(np.float32), 1
 
     def embed_many(self, texts: List[str], prefix: str = "document") -> List[np.ndarray]:
-        """Embed many texts efficiently (batched on the GPU). Returns list of 768-dim arrays."""
-        results: List[np.ndarray] = []
-        for s in range(0, len(texts), BATCH):
-            results.extend(self._embed_forward(texts[s:s + BATCH], prefix))
-        return [r.astype(np.float32) for r in results]
+        """Embed many texts efficiently (length-bucketed batches on the GPU).
+
+        Sorts by length so each batch pads only to its own max — a single long text no longer
+        forces the whole batch to 2048. Returns list of 768-dim arrays in the original order.
+        """
+        n = len(texts)
+        if n == 0:
+            return []
+        order = sorted(range(n), key=lambda i: len(texts[i] or ""))
+        results: List[np.ndarray] = [None] * n
+        for s in range(0, n, BATCH):
+            idx = order[s:s + BATCH]
+            embs = self._embed_forward([texts[i] for i in idx], prefix)
+            for j, i in enumerate(idx):
+                results[i] = embs[j].astype(np.float32)
+        return results
 
     def embed_batch(self, texts: List[str], prefix: str = "document") -> List[np.ndarray]:
         """Alias for embed_many (kept for backward compatibility)."""
