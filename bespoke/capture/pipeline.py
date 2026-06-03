@@ -26,6 +26,7 @@ def capture_interaction(
     interaction: Interaction,
     embedding_svc: Optional[EmbeddingService] = None,
     stats: Optional[dict] = None,
+    embedding=None,
 ) -> Optional[int]:
     """Hash, optionally embed, and insert a single interaction.
 
@@ -44,7 +45,9 @@ def capture_interaction(
         f"{interaction.session_id or ''}|{interaction.user_message}|{interaction.assistant_response}".encode()
     ).hexdigest()
 
-    if embedding_svc is not None:
+    # Embedding: use a precomputed one (batched upstream) if given, else compute single.
+    num_chunks = 1
+    if embedding is None and embedding_svc is not None:
         try:
             embed_text = f"{interaction.user_message}\n{interaction.assistant_response}"
             embedding, num_chunks = embedding_svc.embed(embed_text)
@@ -54,6 +57,7 @@ def capture_interaction(
             tqdm.write(f"  [FAIL] session={interaction.session_id} "
                        f"user={interaction.user_message[:80]!r}... — {e}")
             return None
+    has_embedding = embedding is not None
 
     cursor = conn.execute("""
         INSERT OR IGNORE INTO interactions (
@@ -81,14 +85,14 @@ def capture_interaction(
     ))
 
     if cursor.rowcount == 1:
-        if embedding_svc is not None:
+        if has_embedding:
             conn.execute("""
                 INSERT INTO vec_interactions (rowid, interaction_embedding)
                 VALUES (?, ?)
             """, (cursor.lastrowid, serialize_float32(embedding.tolist())))
         if stats is not None:
             stats["interactions_captured"] = stats.get("interactions_captured", 0) + 1
-            if embedding_svc is not None and num_chunks > 1:
+            if num_chunks > 1:
                 stats["interactions_chunked"] = stats.get("interactions_chunked", 0) + 1
                 stats["total_chunks"] = stats.get("total_chunks", 0) + num_chunks
         return cursor.lastrowid
@@ -172,8 +176,20 @@ def run_capture(
                 stats["sessions_processed"] += 1
                 n = len(interactions)
 
+                # Batch-embed the whole session in one GPU pass (the big speedup).
+                embeds = None
+                if embedding_svc is not None and interactions:
+                    try:
+                        texts = [f"{it.user_message}\n{it.assistant_response}" for it in interactions]
+                        embeds = embedding_svc.embed_many(texts)
+                    except Exception:
+                        embeds = None  # fall back to per-interaction embed below
+
                 for i, interaction in enumerate(interactions):
-                    capture_interaction(conn, interaction, embedding_svc, stats)
+                    emb = embeds[i] if embeds is not None else None
+                    capture_interaction(conn, interaction,
+                                        embedding_svc=None if emb is not None else embedding_svc,
+                                        stats=stats, embedding=emb)
                     if n > 3:
                         pbar.set_description_str(
                             f"{stats['interactions_captured']} new interactions "
