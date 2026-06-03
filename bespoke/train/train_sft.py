@@ -48,21 +48,36 @@ def run_sft_training(
     adapter_dir = config.adapters_dir / adapter_name / "sft"
     adapter_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build MLX training command
+    # iters from epochs × (train_examples / batch), capped to keep runs bounded.
+    batch = config.training.sft_batch_size
+    try:
+        n_train = sum(1 for _ in open(train_path))
+    except OSError:
+        n_train = 1000
+    iters = max(200, min(epochs * (n_train // max(batch, 1)), 800))
+
+    # Rank has no CLI flag in the current mlx-lm — it goes in a config file's lora_parameters.
+    import yaml as _yaml
+    lora_cfg_path = adapter_dir / "lora_config.yaml"
+    lora_cfg_path.write_text(_yaml.safe_dump(
+        {"lora_parameters": {"rank": rank, "scale": 20.0, "dropout": 0.0}}))
+
+    # Build MLX training command (current API: `python -m mlx_lm lora`, --iters, config for rank).
     cmd = [
-        sys.executable, "-m", "mlx_lm.lora",
+        sys.executable, "-m", "mlx_lm", "lora",
         "--model", str(config.base_model.training_model_path),
         "--train",
         "--data", str(train_path.parent),
         "--adapter-path", str(adapter_dir),
         "--fine-tune-type", "dora" if config.training.use_dora else "lora",
         "--num-layers", "-1",
-        "--lora-rank", str(rank),
         "--learning-rate", str(lr),
-        "--batch-size", str(config.training.sft_batch_size),
-        "--epochs", str(epochs),
-        "--steps-per-eval", "50",
-        "--save-every", "100",
+        "--batch-size", str(batch),
+        "--iters", str(iters),
+        "--max-seq-length", "1024",
+        "--steps-per-eval", "200",
+        "--save-every", "200",
+        "-c", str(lora_cfg_path),
     ]
 
     print(f"Running SFT training...")
@@ -71,7 +86,7 @@ def run_sft_training(
     print(f"  DoRA: {config.training.use_dora}")
     print(f"  Rank: {rank}")
     print(f"  LR: {lr}")
-    print(f"  Epochs: {epochs}")
+    print(f"  Iters: {iters} (from {epochs} epochs x {n_train} examples, capped)")
     if domain_filter:
         print(f"  Domain: {domain_filter}")
     if recency_days:
