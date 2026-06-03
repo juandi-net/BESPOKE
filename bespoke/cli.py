@@ -152,52 +152,46 @@ def cmd_train(args):
 
 
 def cmd_eval(args):
-    """Score adapter against benchmark, compare with previous, keep or revert."""
+    """Score the trained MLX adapter geometrically (local, no server), keep or revert."""
     from bespoke.train.evaluate import (
         run_evaluation, compare_scorecards,
         save_scorecard, log_experiment,
     )
-    from bespoke.serve.server import start_server
-    from bespoke.config import config
 
     adapter_name = args.adapter_name
-
     print("BESPOKE Evaluation")
     print("=" * 50)
 
-    proc = None
-    try:
-        print("Starting temporary server for evaluation...")
-        proc = start_server(port=config.base_model.llama_server_port)
+    latest = find_latest_adapter()
+    if not latest:
+        print("No adapter found. Train one first.")
+        sys.exit(1)
+    adapter_path = latest / "sft"
+    print(f"Evaluating MLX adapter at {adapter_path} (geometric, local)...")
 
-        scorecard = run_evaluation(
-            adapter_name=adapter_name,
-            server_port=config.base_model.llama_server_port,
-        )
+    scorecard = run_evaluation(
+        adapter_name=adapter_name,
+        adapter_path=str(adapter_path),
+        num_prompts=getattr(args, "num_prompts", 12),
+    )
+    if "error" in scorecard:
+        print(f"Evaluation failed: {scorecard['error']}")
+        sys.exit(1)
 
-        if "error" in scorecard:
-            print(f"Evaluation failed: {scorecard['error']}")
-            sys.exit(1)
+    previous = find_previous_scorecard(adapter_name)
+    comparison = None
+    if previous:
+        comparison = compare_scorecards(scorecard, previous)
+        print(f"\nDecision: {comparison['decision'].upper()}")
+        print(f"Reasoning: {comparison['reasoning']}")
+    else:
+        print("\nNo previous scorecard — this is the baseline.")
 
-        # Compare with previous scorecard
-        previous = find_previous_scorecard(adapter_name)
-        comparison = None
-        if previous:
-            comparison = compare_scorecards(scorecard, previous)
-            print(f"\nDecision: {comparison['decision'].upper()}")
-            print(f"Reasoning: {comparison['reasoning']}")
-        else:
-            print("\nNo previous scorecard — this is the baseline.")
-
-        save_scorecard(scorecard, comparison)
-        exp_id = log_experiment(scorecard, comparison)
-        print(f"Experiment logged as #{exp_id}")
-
-    finally:
-        if proc:
-            proc.terminate()
-            proc.wait()
-            print("Temporary server stopped.")
+    save_scorecard(scorecard, comparison)
+    exp_id = log_experiment(scorecard, comparison)
+    print(f"Experiment logged as #{exp_id}")
+    print(f"\nReward: {scorecard.get('reward')}  gate_pass_rate: {scorecard.get('gate_pass_rate')}  "
+          f"stability_meter: {scorecard.get('stability_meter')}")
 
 
 def cmd_serve(args):

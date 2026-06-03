@@ -168,7 +168,10 @@ def generate_with_mlx(
     Loads the model once, generates all responses, then unloads.
     One load/unload cycle per experiment — matches the 16GB memory model.
     """
-    model, tokenizer = mlx_lm.load(str(model_path), adapter_path=str(adapter_path))
+    if adapter_path:
+        model, tokenizer = mlx_lm.load(str(model_path), adapter_path=str(adapter_path))
+    else:
+        model, tokenizer = mlx_lm.load(str(model_path))  # base model, no adapter
 
     responses = []
     for prompt in prompts:
