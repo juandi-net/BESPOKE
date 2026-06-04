@@ -110,7 +110,7 @@ def generate_with_context(message_lists, model_path, adapter_path):
             p = tok.apply_chat_template(msgs, add_generation_prompt=True)
         except Exception:
             p = msgs[-1]["content"]
-        out.append(mlx_lm.generate(model, tok, p, max_tokens=512, verbose=False))
+        out.append(mlx_lm.generate(model, tok, p, max_tokens=320, verbose=False))  # shorter: faster + easier to rate
     del model, tok
     gc.collect()
     return out
@@ -214,6 +214,10 @@ _RATING_HTML = """<!doctype html>
   .card .tag { font-weight:bold; font-style:italic; margin-right:10px; }
   .none { text-align:center; color:#777; cursor:pointer; padding:12px; font-style:italic; }
   .none:hover { color:#1a1a1a; }
+  .why { width:100%; font-family:inherit; font-size:15px; padding:9px 11px; box-sizing:border-box;
+         border:1px solid #d8d3c4; background:#fff; margin-top:8px; }
+  .why::placeholder { font-style:italic; color:#aaa; }
+  .whylbl { font-style:italic; color:#666; font-size:13px; margin-top:14px; }
   .hint { font-size:13px; color:#999; margin-top:20px; text-align:center; }
   .done { text-align:center; padding-top:70px; }
   code { background:#f0ece0; padding:1px 5px; }
@@ -232,9 +236,10 @@ async function load(){
 }
 async function pick(v){
   if(cur<0)return;
-  items[cur].verdict=v;
+  const why=(document.getElementById('why')||{}).value||'';
+  items[cur].verdict=v; items[cur].why=why;
   await fetch('/api/verdict',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({index:cur,verdict:v})});
+    body:JSON.stringify({index:cur,verdict:v,why:why})});
   cur=items.findIndex(it=>it.verdict===null);
   cur===-1 ? finish() : render();
 }
@@ -247,7 +252,9 @@ function render(){
   <div class="ask"><span class="lbl">Your ask${it.context_turns?' (mid-conversation)':''}:</span>${esc(it.prompt)}</div>
   ${['A','B','C'].map(L=>`<div class="card" onclick="pick('${L}')"><span class="tag">${L}</span>${esc(it.responses[L])}</div>`).join('')}
   <div class="none" onclick="pick('none')">— I'd keep none of these —</div>
-  <div class="hint">keys: A · B · C · N (none)</div>`;
+  <div class="whylbl">why? (optional — most useful when none fit: what's wrong, what you'd want instead)</div>
+  <input class="why" id="why" autocomplete="off" placeholder="e.g. too verbose & sycophantic; didn't answer the question…">
+  <div class="hint">click a card or — none —; keys A · B · C · N work when not typing here</div>`;
   window.scrollTo(0,0);
 }
 function finish(){
@@ -255,7 +262,9 @@ function finish(){
   <p class="sub">This is now part of how your model learns your standard.<br>Thank you for contributing.</p>
   <p class="hint">Run <code>bespoke arena --score</code> to see the result.</p></div>`;
 }
-document.addEventListener('keydown',e=>{const k=e.key.toLowerCase();
+document.addEventListener('keydown',e=>{
+  if(document.activeElement&&document.activeElement.id==='why')return;  // don't hijack keys while typing why
+  const k=e.key.toLowerCase();
   if(k==='a')pick('A');else if(k==='b')pick('B');else if(k==='c')pick('C');else if(k==='n')pick('none');});
 load();
 </script></body></html>"""
@@ -300,7 +309,9 @@ def serve_arena(json_path=None, port=8421):
                 n = int(self.headers.get("Content-Length", 0) or 0)
                 data = json.loads(self.rfile.read(n) or b"{}")
                 a = json.loads(path.read_text())
-                a["items"][int(data["index"])]["verdict"] = data["verdict"]
+                idx = int(data["index"])
+                a["items"][idx]["verdict"] = data["verdict"]
+                a["items"][idx]["why"] = (data.get("why") or "").strip()  # the high-resolution signal
                 path.write_text(json.dumps(a, indent=2))  # persist every pick
                 rated = sum(1 for it in a["items"] if it["verdict"] is not None)
                 self._send(200, json.dumps({"ok": True, "rated": rated, "total": len(a["items"])}))
