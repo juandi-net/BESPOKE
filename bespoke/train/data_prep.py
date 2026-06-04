@@ -13,6 +13,7 @@ def export_sft_data(
     min_quality: str = "medium",
     max_samples: int = None,
     recency_days: int = None,
+    max_prompt_tokens: int = None,
     output_path: Path = None,
 ) -> Path:
     """Export SFT training pairs as JSONL in chat format for MLX.
@@ -66,6 +67,27 @@ def export_sft_data(
             })
 
     conn.close()
+
+    # Drop pairs whose prompt alone fills the training window. With --mask-prompt and batch=1,
+    # any pair whose prompt token-length >= max_seq has ZERO unmasked response tokens left after
+    # truncation, so the loss divides by 0 -> NaN and kills the run. These over-long prompts are
+    # also the observation-XML / tool-dump junk, not genuine reasoning, so this cleans data too.
+    # mlx-lm computes the prompt offset as len(apply_chat_template(messages[:-1],
+    # add_generation_prompt=True)) (mlx_lm/tuner/datasets.py ChatDataset); match it exactly.
+    if max_prompt_tokens:
+        from mlx_lm.utils import load_tokenizer
+        tok = load_tokenizer(Path(config.base_model.training_model_path))
+        kept = []
+        for pair in pairs:
+            offset = len(tok.apply_chat_template(
+                pair["messages"][:-1], add_generation_prompt=True))
+            if offset < max_prompt_tokens:
+                kept.append(pair)
+        dropped = len(pairs) - len(kept)
+        if dropped:
+            print(f"Filtered {dropped} pairs with prompt >= {max_prompt_tokens} tokens "
+                  f"(NaN-safe + drops tool-dump junk); {len(kept)} remain")
+        pairs = kept
 
     # Write JSONL
     if output_path is None:

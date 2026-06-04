@@ -37,22 +37,27 @@ def run_sft_training(
     epochs = epochs or config.training.sft_epochs
     min_quality = min_quality or "medium"
 
-    # Export training data with filters
+    # 16GB-safe LoRA window. batch 4 / all-16-layers / seq 1024 OOMs the M4's Metal GPU; batch 1,
+    # 8 layers, + grad-checkpoint keeps peak ~2-3 GB. seq 1024 (was 512) so longer genuine
+    # reasoning answers aren't truncated. mask_margin reserves response tokens: with --mask-prompt
+    # + batch 1, any pair whose prompt >= max_seq leaves 0 unmasked tokens after truncation -> NaN.
+    batch = 1
+    num_layers = 8
+    max_seq = 1024
+    mask_margin = 128
+
+    # Export training data with filters (drop prompts too long to leave a response -> NaN-safe).
     train_path = export_sft_data(
         domain=domain_filter,
         min_quality=min_quality,
         recency_days=recency_days,
+        max_prompt_tokens=max_seq - mask_margin,
     )
 
     # Adapter output path
     adapter_dir = config.adapters_dir / adapter_name / "sft"
     adapter_dir.mkdir(parents=True, exist_ok=True)
 
-    # 16GB-safe settings: batch 4 / all-16-layers / seq 1024 OOMs the M4's Metal GPU. Use batch 1,
-    # fewer layers, shorter seq, and grad checkpointing (trades compute for memory).
-    batch = 1
-    num_layers = 8
-    max_seq = 512
     try:
         n_train = sum(1 for _ in open(train_path))
     except OSError:
