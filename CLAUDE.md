@@ -28,10 +28,16 @@ research, training, or the pipeline. Order matters (why → what → decisions �
 
 ## Where we are right now
 
-There is no single "current state" file (transient goal-run logs don't count as history). Reconstruct
-the present from, in order: the recent **`git log`** (committed code = the durable record), the top of
-**`docs/bespoke-research-log.md`** (latest experiments), and the newest decisions in
+Reconstruct the present from, in order: the recent **`git log`** (committed code = the durable record), the
+top of **`docs/bespoke-research-log.md`** (latest experiments RT-001..005), and the newest decisions in
 **`strategy/program.md`** and the `docs/bespoke-*-design.md` notes.
+
+**Current focus + ordered next steps (2026-06-04):** building the user's TASTE RUBRIC to make the eval
+clean/automated and prove the thesis. State: thesis now measurable via `bespoke arena` (scale beats fit ~2:1
+so far; fit beats base 3:1); clean-label taste separability ~0.69 (`bespoke curate`). **Next, in order:**
+(1) build a stated-preferences interview into the keep/drop UI; (2) gather more keep/drop + whys;
+(3) formalize the rubric into weighted measurable axes; (4) capture edit-deltas; then retrain + re-arena.
+Full handoff in the `bespoke-next-steps` memory + `notes.md` (latest section).
 
 ---
 
