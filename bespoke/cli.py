@@ -407,6 +407,15 @@ def cmd_arena(args):
         print("Use one of: --build | --serve | --rate | --score   (see `bespoke arena -h`)")
 
 
+def cmd_curate(args):
+    """One-time browser curation: keep/drop your real interactions + why (seeds the model)."""
+    from bespoke.benchmark import curate
+    if args.summary:
+        curate.summarize_curation()
+    else:
+        curate.serve_curation(n=args.n)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────
 
 
@@ -462,6 +471,12 @@ def main():
     p_arena.add_argument("--score", action="store_true", help="Show win-rates from your ratings")
     p_arena.add_argument("--n", type=int, default=16, help="Number of items to build (default 16)")
     p_arena.set_defaults(func=cmd_arena)
+
+    # curate — one-time browser curation interview (seeds the model from your real data)
+    p_curate = subparsers.add_parser("curate", help="One-time browser curation: keep/drop your real interactions + why")
+    p_curate.add_argument("--summary", action="store_true", help="Review your curation so far")
+    p_curate.add_argument("--n", type=int, default=40, help="How many interactions to curate (default 40)")
+    p_curate.set_defaults(func=cmd_curate)
 
     # serve
     p_serve = subparsers.add_parser("serve", help="Start local model server")
