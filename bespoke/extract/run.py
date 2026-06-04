@@ -15,6 +15,7 @@ from datetime import datetime
 
 from bespoke.db.init import get_connection
 from bespoke.extract.feedback import classify_feedback
+from bespoke.extract.content_type import classify_content, clean_tool_blocks
 from bespoke.extract.conversations import assemble_sessions, segment_conversation, _gap_seconds
 from bespoke.extract.mechanical import is_tangled
 from bespoke.eval.signals import get_labeled_embeddings
@@ -108,8 +109,14 @@ def run_geometric_extract(conn=None):
                     continue
                 if t["feedback_class"] in REJECT:
                     continue
+                # content-type filter: drop observer/tool-dump junk; strip raw tool blocks from agentic.
+                ctype, _ = classify_content(t["user_message"], t["assistant_response"])
+                if ctype in ("observer", "tool_result_only"):
+                    continue
                 instr = (t["user_message"] or "").strip()
                 resp = (t["assistant_response"] or "").strip()
+                if ctype == "agentic":
+                    resp = (clean_tool_blocks(resp) or "").strip()
                 if not instr or not resp:
                     continue
                 q = quality.get(t["id"], "medium")

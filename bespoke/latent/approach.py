@@ -144,10 +144,18 @@ def main():
     ap.add_argument("--n-neighbors", type=int, default=15)
     ap.add_argument("--min-accept", type=int, default=8)
     ap.add_argument("--min-reject", type=int, default=8)
+    ap.add_argument("--clean", action="store_true",
+                    help="drop observer/tool_result_only junk via content_type (RT-002)")
     args = ap.parse_args()
 
     conn = get_connection()
     ids, X, y = get_labeled_embeddings(conn)
+    if args.clean:
+        ct = {r["id"]: r["content_type"]
+              for r in conn.execute("SELECT id, content_type FROM interactions").fetchall()}
+        keep = np.array([ct.get(int(i)) in ("agentic", "clean") for i in ids])
+        ids, X, y = ids[keep], X[keep], y[keep]
+        print(f"--clean: kept {int(keep.sum())}/{len(keep)} (dropped observer + tool_result_only junk)")
     conn.close()
 
     print(f"Loaded {len(ids)} embeddings ({(y==1).sum()} accept / {(y==0).sum()} reject / "

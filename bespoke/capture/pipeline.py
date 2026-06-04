@@ -18,6 +18,7 @@ from bespoke.capture.parsers import (
     find_claude_code_sessions,
 )
 from bespoke.capture.embeddings import EmbeddingService
+from bespoke.extract.content_type import classify_content
 from bespoke.config import config
 
 
@@ -59,14 +60,19 @@ def capture_interaction(
             return None
     has_embedding = embedding is not None
 
+    # Curation tag (warehouse keeps raw; extract filters by this). Cheap + deterministic.
+    content_type, tool_call_count = classify_content(
+        interaction.user_message, interaction.assistant_response)
+
     cursor = conn.execute("""
         INSERT OR IGNORE INTO interactions (
             provider, model, source, session_id,
             system_prompt, user_message, assistant_response,
             user_followup,
             input_tokens, output_tokens, captured_at, content_hash,
-            cache_read_tokens, cache_creation_tokens
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            cache_read_tokens, cache_creation_tokens,
+            content_type, tool_call_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         interaction.provider,
         interaction.model,
@@ -82,6 +88,8 @@ def capture_interaction(
         content_hash,
         interaction.cache_read_tokens,
         interaction.cache_creation_tokens,
+        content_type,
+        tool_call_count,
     ))
 
     if cursor.rowcount == 1:

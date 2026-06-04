@@ -70,7 +70,9 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
                 "stage2a_fail_count INTEGER DEFAULT 0",
                 "feedback_confidence REAL DEFAULT 1.0",
                 "cache_read_tokens INTEGER",
-                "cache_creation_tokens INTEGER"]:
+                "cache_creation_tokens INTEGER",
+                "content_type TEXT",
+                "tool_call_count INTEGER"]:
         try:
             conn.execute(f"ALTER TABLE interactions ADD COLUMN {col}")
         except sqlite3.OperationalError:

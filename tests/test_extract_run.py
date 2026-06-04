@@ -58,6 +58,34 @@ class TestGeometricExtract:
         assert stats["pairs_written"] == 6
         assert stats["probe_trained"] is True
 
+    def test_junk_excluded_and_agentic_tool_blocks_stripped(self, db):
+        """observer/tool_result_only never become pairs; agentic pairs keep reasoning, drop dumps."""
+        from bespoke.extract.run import run_geometric_extract
+        # clean accepted prose -> a normal pair
+        _ins(db, "s1", "2026-06-02T00:00:00Z", "real question", "a thoughtful answer", "perfect thanks", GOOD)
+        # observer junk, accepted-looking -> must be EXCLUDED despite the accept signal
+        _ins(db, "s2", "2026-06-02T00:00:00Z", "You are a Claude-Mem observer",
+             "<observation>noted</observation>", "ok good", GOOD)
+        # agentic: real reasoning + tool dump -> pair kept, blocks collapsed to [N tool calls]
+        agentic_ar = ('<thinking>plan</thinking>'
+                      '<tool_use name="Bash">{"command":"ls"}</tool_use><tool_result>f1</tool_result>'
+                      ' final answer')
+        _ins(db, "s3", "2026-06-02T00:00:00Z", "do a task", agentic_ar, "nice thanks", GOOD)
+
+        run_geometric_extract(conn=db)
+
+        responses = [r["response"] for r in
+                     db.execute("SELECT response FROM training_pairs").fetchall()]
+        # observer never becomes a training pair
+        assert not any("<observation>" in r for r in responses)
+        # no raw tool syntax survives into training data
+        assert not any("<tool_use" in r or "<tool_result" in r for r in responses)
+        # the agentic pair is kept, reasoning preserved, dump summarized
+        agentic = [r for r in responses if "final answer" in r]
+        assert len(agentic) == 1
+        assert "[1 tool call]" in agentic[0]
+        assert "<thinking>plan</thinking>" in agentic[0]
+
     def test_incremental_no_duplicate_pairs(self, db):
         from bespoke.extract.run import run_geometric_extract
         for i in range(5):

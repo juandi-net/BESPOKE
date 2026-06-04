@@ -51,7 +51,9 @@ CREATE TABLE IF NOT EXISTS interactions (
     used_in_sft INTEGER DEFAULT 0,      -- Has been used in SFT training
     used_in_dpo INTEGER DEFAULT 0,      -- Has been used in DPO training
     generation_source TEXT DEFAULT 'frontier',  -- 'frontier' or 'specialist' (for flywheel tracking)
-    content_hash TEXT                        -- SHA-256 of session_id + user_message + assistant_response
+    content_hash TEXT,                       -- SHA-256 of session_id + user_message + assistant_response
+    content_type TEXT,                       -- observer | tool_result_only | agentic | clean (curation tag)
+    tool_call_count INTEGER                  -- # of tool_use blocks (behavioral signal; raw kept)
 );
 
 -- ============================================================
