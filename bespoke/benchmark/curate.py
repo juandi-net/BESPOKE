@@ -108,11 +108,23 @@ function render(){
   <div class="hint">keys: K (keep) · D (drop) — when not typing why</div>`;
   window.scrollTo(0,0);
 }
-function finish(){
+async function finish(){
   const kept=items.filter(it=>it.verdict==='keep').length;
   app.innerHTML=`<div class="done"><h1>You've seeded your standard.</h1>
   <p class="sub">${kept} kept of ${total}. From here, the system learns from your normal use —<br>you won't have to do this again unless you want to.</p>
+  <p id="sep" class="sub">measuring whether your standard separates in the latent space…</p>
   <p class="hint">Run <code>bespoke curate --summary</code> to review.</p></div>`;
+  try{
+    const s=await (await fetch('/api/separability')).json();
+    const el=document.getElementById('sep');
+    if(s.auc!==undefined){
+      const read = s.auc>=0.72 ? 'clean — the automated latent-space eval is viable.'
+        : s.auc>=0.62 ? 'comparable to the noisy auto-labels — the why-axes likely add the rest.'
+        : 'faint — likely representation-limited.';
+      el.innerHTML=`Your standard separates in the latent space at <b>AUC ${s.auc.toFixed(2)}</b> `
+        +`(vs ~0.62 on the old auto-labels, ${s.n_keep} keep / ${s.n_drop} drop) — ${read}`;
+    } else { el.textContent = s.error||''; }
+  }catch(e){}
 }
 document.addEventListener('keydown',e=>{
   if(document.activeElement&&document.activeElement.id==='why')return;
@@ -153,6 +165,8 @@ def serve_curation(n=40, port=8422, seed=0):
                 self._send(200, _HTML, "text/html; charset=utf-8")
             elif p == "/api/curation":
                 self._send(200, _FILE.read_text())
+            elif p == "/api/separability":
+                self._send(200, json.dumps(curation_separability()))
             else:
                 self._send(404, "{}")
 
@@ -182,6 +196,39 @@ def serve_curation(n=40, port=8422, seed=0):
             print("\nstopped. Review with:  bespoke curate --summary")
 
 
+def curation_separability():
+    """Does your CURATED keep/drop separate in the latent space? (the RT-003 test, but on YOUR
+    deliberate labels instead of the noisy ~0.62 followup-heuristic labels). Cross-validated AUC.
+    """
+    import numpy as np
+    if not _FILE.exists():
+        return {"error": "no curation yet"}
+    a = json.loads(_FILE.read_text())
+    keep = [it["id"] for it in a["items"] if it["verdict"] == "keep"]
+    drop = [it["id"] for it in a["items"] if it["verdict"] == "drop"]
+    if len(keep) < 3 or len(drop) < 3:
+        return {"error": f"need ≥3 keep AND ≥3 drop to measure (have {len(keep)} keep / {len(drop)} drop)"}
+    ids = keep + drop
+    conn = get_connection()
+    q = ",".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT i.id AS id, v.interaction_embedding AS emb FROM interactions i "
+        f"JOIN vec_interactions v ON v.rowid = i.id WHERE i.id IN ({q})", ids).fetchall()
+    conn.close()
+    em = {r["id"]: np.frombuffer(r["emb"], dtype=np.float32) for r in rows}
+    keep = [i for i in keep if i in em]
+    drop = [i for i in drop if i in em]
+    X = np.vstack([em[i] for i in keep + drop]).astype(np.float64)
+    X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-8)
+    y = np.array([1] * len(keep) + [0] * len(drop))
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import cross_val_score
+    cv = max(2, min(5, len(keep), len(drop)))
+    auc = float(cross_val_score(
+        LogisticRegression(max_iter=2000, class_weight="balanced"), X, y, cv=cv, scoring="roc_auc").mean())
+    return {"auc": auc, "n_keep": len(keep), "n_drop": len(drop), "baseline": 0.62, "cv": cv}
+
+
 def summarize_curation():
     if not _FILE.exists():
         print("No curation yet. Run `bespoke curate` first.")
@@ -196,3 +243,10 @@ def summarize_curation():
     print(f"  {len(whys)} reasons captured (seed for the WHY-rubric)")
     for w in whys[:8]:
         print(f"   • {w}")
+    sep = curation_separability()
+    if "auc" in sep:
+        print(f"\nLatent-space separability of YOUR labels: AUC {sep['auc']:.2f} "
+              f"(cv={sep['cv']}, {sep['n_keep']} keep / {sep['n_drop']} drop) — vs ~0.62 on the noisy auto-labels.")
+        print("  >=0.72: clean (automated eval viable) | ~0.62: why-axes needed | <0.62: representation-limited")
+    else:
+        print(f"\nseparability: {sep.get('error')}")
