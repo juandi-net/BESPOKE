@@ -50,7 +50,12 @@ def score_verdicts(items):
 
 
 def select_arena_items(n=16, seed=0):
-    """Held-out prompts + the frontier (captured) answer, from the training run's valid.jsonl split."""
+    """Held-out prompts + the frontier (captured) answer, from the training run's valid.jsonl split.
+
+    Strips injected app boilerplate (Conductor <system_instruction>) so the rated prompt is the REAL
+    ask; pure-boilerplate turns drop out (empty after strip). Keeps `orig` for session-context lookup.
+    """
+    from bespoke.extract.content_type import strip_conductor_boilerplate
     if not _VALID.exists():
         raise RuntimeError(f"No held-out set at {_VALID} — run `bespoke train` first (it writes valid.jsonl).")
     rows = []
@@ -58,10 +63,11 @@ def select_arena_items(n=16, seed=0):
         if not line.strip():
             continue
         msgs = json.loads(line).get("messages", [])
-        prompt = next((m["content"] for m in msgs if m["role"] == "user"), "")
+        orig = next((m["content"] for m in msgs if m["role"] == "user"), "")
         frontier = next((m["content"] for m in msgs if m["role"] == "assistant"), "")
+        prompt = (strip_conductor_boilerplate(orig) or "")
         if 20 <= len(prompt) <= 2000 and len(frontier) >= 20:
-            rows.append({"prompt": prompt, "frontier": frontier})
+            rows.append({"prompt": prompt, "orig": orig, "frontier": frontier})
     random.Random(seed).shuffle(rows)
     return rows[:n]
 
@@ -122,9 +128,9 @@ def build_arena(n=16, out_dir=None, seed=0):
     conn = get_connection()
     msg_lists = []
     for it in items:
-        ctx = _context_messages(it["prompt"], conn)
+        ctx = _context_messages(it.get("orig", it["prompt"]), conn)  # match on the ORIGINAL (un-stripped) text
         it["context_turns"] = len(ctx) // 2
-        msg_lists.append(ctx + [{"role": "user", "content": it["prompt"]}])
+        msg_lists.append(ctx + [{"role": "user", "content": it["prompt"]}])  # generate on the stripped real ask
     conn.close()
     with_ctx = sum(1 for it in items if it["context_turns"] > 0)
 
@@ -188,6 +194,130 @@ def rate_arena(json_path=None):
         it["verdict"] = "none" if choice == "none" else (choice.upper() if choice in ("a", "b", "c") else None)
         path.write_text(json.dumps(arena, indent=2))  # persist after each
     print("\nSaved. Score with: bespoke arena --score")
+
+
+_RATING_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>BESPOKE — shape your model</title>
+<style>
+  body { font-family:'Times New Roman',Times,serif; background:#fdfcf8; color:#1a1a1a;
+         max-width:760px; margin:0 auto; padding:48px 28px 110px; line-height:1.55; }
+  h1 { font-size:30px; font-weight:normal; letter-spacing:.4px; margin:0 0 4px; }
+  .sub { font-style:italic; color:#555; margin:0 0 26px; }
+  .prog { font-size:14px; color:#555; margin-bottom:6px; }
+  .bar { height:3px; background:#e7e3d7; margin-bottom:30px; }
+  .bar > div { height:100%; background:#1a1a1a; width:0; transition:width .35s; }
+  .ask { background:#f4f1e8; border-left:3px solid #1a1a1a; padding:12px 16px; margin-bottom:22px; }
+  .ask .lbl { font-style:italic; color:#666; font-size:13px; display:block; margin-bottom:4px; }
+  .card { border:1px solid #d8d3c4; padding:14px 18px; margin-bottom:14px; cursor:pointer;
+          white-space:pre-wrap; transition:background .12s,border-color .12s; }
+  .card:hover { background:#f7f4ec; border-color:#1a1a1a; }
+  .card .tag { font-weight:bold; font-style:italic; margin-right:10px; }
+  .none { text-align:center; color:#777; cursor:pointer; padding:12px; font-style:italic; }
+  .none:hover { color:#1a1a1a; }
+  .hint { font-size:13px; color:#999; margin-top:20px; text-align:center; }
+  .done { text-align:center; padding-top:70px; }
+  code { background:#f0ece0; padding:1px 5px; }
+</style></head>
+<body><div id="app"></div>
+<script>
+let items=[], cur=-1, total=0;
+const app=document.getElementById('app');
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function rated(){return items.filter(it=>it.verdict!==null).length;}
+async function load(){
+  const d=await (await fetch('/api/arena')).json();
+  items=d.items; total=items.length;
+  cur=items.findIndex(it=>it.verdict===null);
+  cur===-1 ? finish() : render();
+}
+async function pick(v){
+  if(cur<0)return;
+  items[cur].verdict=v;
+  await fetch('/api/verdict',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({index:cur,verdict:v})});
+  cur=items.findIndex(it=>it.verdict===null);
+  cur===-1 ? finish() : render();
+}
+function render(){
+  const it=items[cur], done=rated();
+  app.innerHTML=`<h1>Shape your model</h1>
+  <p class="sub">Each pick teaches BESPOKE what <em>good</em> means to you — you're not testing it, you're shaping it.</p>
+  <div class="prog">You've shaped ${done} of ${total}</div>
+  <div class="bar"><div style="width:${(100*done/total).toFixed(1)}%"></div></div>
+  <div class="ask"><span class="lbl">Your ask${it.context_turns?' (mid-conversation)':''}:</span>${esc(it.prompt)}</div>
+  ${['A','B','C'].map(L=>`<div class="card" onclick="pick('${L}')"><span class="tag">${L}</span>${esc(it.responses[L])}</div>`).join('')}
+  <div class="none" onclick="pick('none')">— I'd keep none of these —</div>
+  <div class="hint">keys: A · B · C · N (none)</div>`;
+  window.scrollTo(0,0);
+}
+function finish(){
+  app.innerHTML=`<div class="done"><h1>You've shaped all ${total}.</h1>
+  <p class="sub">This is now part of how your model learns your standard.<br>Thank you for contributing.</p>
+  <p class="hint">Run <code>bespoke arena --score</code> to see the result.</p></div>`;
+}
+document.addEventListener('keydown',e=>{const k=e.key.toLowerCase();
+  if(k==='a')pick('A');else if(k==='b')pick('B');else if(k==='c')pick('C');else if(k==='n')pick('none');});
+load();
+</script></body></html>"""
+
+
+def serve_arena(json_path=None, port=8421):
+    """Serve a minimal local rating page (Times New Roman, blind A/B/C); each pick saves to disk."""
+    import http.server
+    import socketserver
+    import webbrowser
+    from urllib.parse import urlparse
+
+    path = Path(json_path or (_DEFAULT_DIR / "arena.json"))
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def _send(self, code, body, ctype="application/json"):
+            b = body if isinstance(body, bytes) else body.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+
+        def do_GET(self):
+            p = urlparse(self.path).path
+            if p in ("/", "/index.html"):
+                self._send(200, _RATING_HTML, "text/html; charset=utf-8")
+            elif p == "/api/arena":
+                a = json.loads(path.read_text())
+                items = [{"prompt": it["prompt"], "responses": it["responses"],  # blind: no key
+                          "verdict": it["verdict"], "context_turns": it.get("context_turns", 0)}
+                         for it in a["items"]]
+                self._send(200, json.dumps({"items": items}))
+            else:
+                self._send(404, "{}")
+
+        def do_POST(self):
+            if urlparse(self.path).path == "/api/verdict":
+                n = int(self.headers.get("Content-Length", 0) or 0)
+                data = json.loads(self.rfile.read(n) or b"{}")
+                a = json.loads(path.read_text())
+                a["items"][int(data["index"])]["verdict"] = data["verdict"]
+                path.write_text(json.dumps(a, indent=2))  # persist every pick
+                rated = sum(1 for it in a["items"] if it["verdict"] is not None)
+                self._send(200, json.dumps({"ok": True, "rated": rated, "total": len(a["items"])}))
+            else:
+                self._send(404, "{}")
+
+    url = f"http://localhost:{port}/"
+    print(f"Rating page: {url}\n  open it, click through (or A/B/C/N) — each pick saves instantly. Ctrl-C to stop.")
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+    with socketserver.TCPServer(("127.0.0.1", port), H) as httpd:
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\nstopped. Score with:  bespoke arena --score")
 
 
 def score_arena(json_path=None):

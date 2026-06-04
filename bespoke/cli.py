@@ -397,12 +397,14 @@ def cmd_arena(args):
     from bespoke.eval import arena
     if args.build:
         arena.build_arena(n=args.n)
+    elif args.serve:
+        arena.serve_arena()
     elif args.rate:
         arena.rate_arena()
     elif args.score:
         arena.score_arena()
     else:
-        print("Use one of: --build | --rate | --score   (see `bespoke arena -h`)")
+        print("Use one of: --build | --serve | --rate | --score   (see `bespoke arena -h`)")
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────
@@ -455,7 +457,8 @@ def main():
     # arena — blind thesis eval (base vs adapter vs frontier; you judge)
     p_arena = subparsers.add_parser("arena", help="Blind thesis eval: base vs adapter vs frontier, you judge")
     p_arena.add_argument("--build", action="store_true", help="Generate a blind arena from held-out prompts")
-    p_arena.add_argument("--rate", action="store_true", help="Interactively rate the arena (blind)")
+    p_arena.add_argument("--serve", action="store_true", help="Open the local browser rating page (blind)")
+    p_arena.add_argument("--rate", action="store_true", help="Interactively rate the arena in the terminal (blind)")
     p_arena.add_argument("--score", action="store_true", help="Show win-rates from your ratings")
     p_arena.add_argument("--n", type=int, default=16, help="Number of items to build (default 16)")
     p_arena.set_defaults(func=cmd_arena)
