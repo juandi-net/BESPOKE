@@ -51,6 +51,25 @@ def classify_content(user_message, assistant_response):
     return ("clean", 0)
 
 
+# Injected app boilerplate: Conductor wraps the user's real ask in <system_instruction> /
+# <system-instruction> blocks. This is the FIRST instance of a general pattern — different apps
+# (Conductor, Claude Code, etc.) inject their own system prompts around genuine user reasoning, and
+# we want to strip all of them to isolate the real ask. Future: per-app boilerplate signatures /
+# an automatic stripper so this works for any user's tooling (see docs/program.md).
+_SYS_INSTRUCTION = re.compile(r"<system[_-]instruction>.*?</system[_-]instruction>", re.DOTALL | re.I)
+
+
+def strip_conductor_boilerplate(text):
+    """Remove injected Conductor <system_instruction> blocks, keeping the user's real ask.
+
+    Returns the stripped text (empty if the turn was pure boilerplate). No-op when absent.
+    Recovers ~1,158 real tasks that a naive "drop Conductor interactions" would have discarded.
+    """
+    if not text:
+        return text
+    return _SYS_INSTRUCTION.sub("", text).strip()
+
+
 def clean_tool_blocks(text):
     """Strip raw <tool_use>/<tool_result> blocks, collapse them to one `[N tool call(s)]` marker.
 

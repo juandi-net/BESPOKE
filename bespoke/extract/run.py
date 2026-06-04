@@ -15,7 +15,7 @@ from datetime import datetime
 
 from bespoke.db.init import get_connection
 from bespoke.extract.feedback import classify_feedback
-from bespoke.extract.content_type import classify_content, clean_tool_blocks
+from bespoke.extract.content_type import classify_content, clean_tool_blocks, strip_conductor_boilerplate
 from bespoke.extract.conversations import assemble_sessions, segment_conversation, _gap_seconds
 from bespoke.extract.mechanical import is_tangled
 from bespoke.eval.signals import get_labeled_embeddings
@@ -113,7 +113,9 @@ def run_geometric_extract(conn=None):
                 ctype, _ = classify_content(t["user_message"], t["assistant_response"])
                 if ctype in ("observer", "tool_result_only"):
                     continue
-                instr = (t["user_message"] or "").strip()
+                # strip injected app boilerplate (Conductor <system_instruction>) -> keep the real ask;
+                # pure-boilerplate turns become empty here and are dropped by the `not instr` check below.
+                instr = (strip_conductor_boilerplate(t["user_message"]) or "").strip()
                 resp = (t["assistant_response"] or "").strip()
                 if ctype == "agentic":
                     resp = (clean_tool_blocks(resp) or "").strip()
