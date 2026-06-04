@@ -392,6 +392,19 @@ def cmd_benchmark_interview(args):
         print(json.dumps(result, indent=2))
 
 
+def cmd_arena(args):
+    """Blind thesis eval: base vs adapter vs frontier (=captured response), judged by you."""
+    from bespoke.eval import arena
+    if args.build:
+        arena.build_arena(n=args.n)
+    elif args.rate:
+        arena.rate_arena()
+    elif args.score:
+        arena.score_arena()
+    else:
+        print("Use one of: --build | --rate | --score   (see `bespoke arena -h`)")
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────
 
 
@@ -438,6 +451,14 @@ def main():
     p_eval.add_argument("--adapter-name", type=str, default="general-v1",
                         help="Adapter to evaluate")
     p_eval.set_defaults(func=cmd_eval)
+
+    # arena — blind thesis eval (base vs adapter vs frontier; you judge)
+    p_arena = subparsers.add_parser("arena", help="Blind thesis eval: base vs adapter vs frontier, you judge")
+    p_arena.add_argument("--build", action="store_true", help="Generate a blind arena from held-out prompts")
+    p_arena.add_argument("--rate", action="store_true", help="Interactively rate the arena (blind)")
+    p_arena.add_argument("--score", action="store_true", help="Show win-rates from your ratings")
+    p_arena.add_argument("--n", type=int, default=16, help="Number of items to build (default 16)")
+    p_arena.set_defaults(func=cmd_arena)
 
     # serve
     p_serve = subparsers.add_parser("serve", help="Start local model server")
