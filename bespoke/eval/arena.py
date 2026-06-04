@@ -66,21 +66,74 @@ def select_arena_items(n=16, seed=0):
     return rows[:n]
 
 
+def _context_messages(prompt, conn, max_prior=3):
+    """Reconstruct prior-turn context for a held-out prompt from the warehouse (RT-004 fix).
+
+    Many held-out prompts are mid-conversation turns; the frontier answered them WITH the full
+    thread, so base/adapter must get the same context to be judged fairly. Returns a chat message
+    list of up to max_prior prior (user, assistant) turns from the same session, [] if none/no match.
+    """
+    row = conn.execute(
+        "SELECT session_id, captured_at FROM interactions WHERE user_message = ? "
+        "AND session_id IS NOT NULL ORDER BY captured_at LIMIT 1", (prompt,)).fetchone()
+    if not row:
+        return []
+    prior = conn.execute(
+        "SELECT user_message, assistant_response FROM interactions "
+        "WHERE session_id = ? AND captured_at < ? ORDER BY captured_at DESC LIMIT ?",
+        (row["session_id"], row["captured_at"], max_prior)).fetchall()
+    msgs = []
+    for r in reversed(prior):
+        um, ar = (r["user_message"] or "").strip(), (r["assistant_response"] or "").strip()
+        if um:
+            msgs.append({"role": "user", "content": um[:1500]})
+        if ar:
+            msgs.append({"role": "assistant", "content": ar[:1500]})
+    return msgs
+
+
+def generate_with_context(message_lists, model_path, adapter_path):
+    """Generate one response per chat-message-list (multi-turn context). adapter_path="" -> base."""
+    import gc
+    import mlx_lm
+    model, tok = (mlx_lm.load(model_path, adapter_path=adapter_path) if adapter_path
+                  else mlx_lm.load(model_path))
+    out = []
+    for msgs in message_lists:
+        try:
+            p = tok.apply_chat_template(msgs, add_generation_prompt=True)
+        except Exception:
+            p = msgs[-1]["content"]
+        out.append(mlx_lm.generate(model, tok, p, max_tokens=512, verbose=False))
+    del model, tok
+    gc.collect()
+    return out
+
+
 def build_arena(n=16, out_dir=None, seed=0):
-    """Select held-out items, generate base+adapter, blind-assemble, write arena.json + arena.md."""
-    from bespoke.train.evaluate import generate_with_mlx
+    """Select held-out items, reconstruct session context, generate base+adapter, blind-assemble, write."""
+    from bespoke.db.init import get_connection
 
     items = select_arena_items(n=n, seed=seed)
     if not items:
         raise RuntimeError("No held-out items found to build an arena.")
 
+    # Give base/adapter the same session context the frontier had (RT-004 methodology fix).
+    conn = get_connection()
+    msg_lists = []
+    for it in items:
+        ctx = _context_messages(it["prompt"], conn)
+        it["context_turns"] = len(ctx) // 2
+        msg_lists.append(ctx + [{"role": "user", "content": it["prompt"]}])
+    conn.close()
+    with_ctx = sum(1 for it in items if it["context_turns"] > 0)
+
     model_path = str(config.base_model.training_model_path)
     adapter_path = str(config.adapters_dir / "general-v1" / "sft")
-    prompts = [it["prompt"] for it in items]
-    print(f"Generating BASE responses for {len(prompts)} held-out prompts...")
-    base = generate_with_mlx(prompts, model_path, "")
+    print(f"Generating BASE responses ({len(items)} prompts; {with_ctx} with reconstructed context)...")
+    base = generate_with_context(msg_lists, model_path, "")
     print("Generating ADAPTER responses...")
-    adapt = generate_with_mlx(prompts, model_path, adapter_path)
+    adapt = generate_with_context(msg_lists, model_path, adapter_path)
 
     arena = {"created": datetime.now().isoformat(timespec="seconds"),
              "model_path": model_path, "adapter_path": adapter_path, "items": []}
@@ -89,7 +142,7 @@ def build_arena(n=16, out_dir=None, seed=0):
                      "frontier": (it["frontier"] or "").strip()}
         labeled, key = assemble_contestants(responses, seed=seed * 1000 + i)
         arena["items"].append({
-            "prompt": it["prompt"],
+            "prompt": it["prompt"], "context_turns": it.get("context_turns", 0),
             "responses": {x["label"]: x["text"] for x in labeled},
             "key": key, "verdict": None,
         })
