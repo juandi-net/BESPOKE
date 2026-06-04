@@ -49,7 +49,10 @@ class BaseModelConfig:
 class TrainingConfig:
     """Default training hyperparameters."""
     # SFT phase
-    sft_learning_rate: float = 2e-4
+    # 2e-5, not 2e-4: training is forced to batch=1 by the 16GB budget (see train_sft.py), where
+    # single-example gradients are high-variance. At 2e-4 the LoRA weights overshoot by ~iter 20
+    # (loss 3->11) and diverge; 2e-5 is the batch-1-appropriate rate. Bump back up for larger batches.
+    sft_learning_rate: float = 2e-5
     sft_rank: int = 16
     sft_epochs: int = 2
     sft_batch_size: int = 4
