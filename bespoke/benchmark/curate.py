@@ -18,6 +18,56 @@ from bespoke.db.init import get_connection
 _DIR = Path.home() / ".bespoke" / "curation"
 _FILE = _DIR / "curation.json"
 
+# Stated-preferences interview (next-steps.md #1): a weak prior in juandi's own words, saved
+# alongside the revealed keep/drop. The gap stated-vs-revealed is itself signal.
+#
+# It runs BEFORE keep/drop — he hasn't seen examples yet — so every prompt is OPEN free-text, not a
+# forced scale/binary (juandi, 2026-06-04: scales pre-examples make him introspect in a vacuum and throw
+# away nuance). He types the tradeoffs/context/anchors in his words; step #3 parses+weights each into the
+# measurable axes. This list is the SINGLE source of truth — served to the page so UI/save/summary never
+# drift. Swap wording freely; keep keys stable (they're the stored fields).
+_STATED_QUESTIONS = [
+    {"key": "good", "q": "When a response is exactly right — what makes it good?",
+     "ph": ""},
+    {"key": "bad", "q": "What makes you instantly drop one — the tells it isn't yours?",
+     "ph": ""},
+    {"key": "voice", "q": "How should a response sound or behave to feel like you?",
+     "ph": ""},
+    {"key": "tradeoffs", "q": "When your own rules collide — brevity vs completeness, just-do-it vs "
+     "check-with-me-first, commit-to-one-answer vs lay-out-the-options — which wins, and when?",
+     "ph": ""},
+    {"key": "context", "q": "When does a long or deep answer earn its length — vs. when do you just "
+     "want the short version?", "ph": ""},
+    {"key": "level", "q": "Where are you a beginner vs. an expert? (so it can meet you where you are)",
+     "ph": ""},
+    {"key": "pushback", "q": "When you're wrong, or about to do something dumb — how should it handle that?",
+     "ph": ""},
+    {"key": "loved", "q": "Optional — paste a response you loved, and what made it land.", "ph": ""},
+    {"key": "hated", "q": "Optional — paste one you hated, and what was off.", "ph": ""},
+]
+_STATED_FIELDS = tuple(q["key"] for q in _STATED_QUESTIONS)
+
+
+def get_stated():
+    """Return the stated-rubric answers ({} if the interview hasn't been done)."""
+    if not _FILE.exists():
+        return {}
+    return json.loads(_FILE.read_text()).get("stated", {})
+
+
+def save_stated(answers):
+    """Persist the stated-preferences answers into curation.json (trimmed; marks done).
+
+    Merges into the existing file — never clobbers the keep/drop items already on disk.
+    """
+    _DIR.mkdir(parents=True, exist_ok=True)
+    a = json.loads(_FILE.read_text()) if _FILE.exists() else {"items": []}
+    stated = {k: (str((answers or {}).get(k) or "")).strip() for k in _STATED_FIELDS}
+    stated["done"] = True
+    a["stated"] = stated
+    _FILE.write_text(json.dumps(a, indent=2))
+    return stated
+
 
 def select_curation_items(n=40, seed=0):
     """Sample real interactions (boilerplate-stripped prompt + cleaned response) to curate."""
@@ -72,18 +122,50 @@ _HTML = """<!doctype html>
   .hint { font-size:13px; color:#999; margin-top:18px; text-align:center; }
   .done { text-align:center; padding-top:70px; }
   code { background:#f0ece0; padding:1px 5px; }
+  .q { margin-bottom:22px; }
+  .q label { display:block; font-size:16px; margin-bottom:7px; }
+  .q label .note { font-style:italic; color:#888; font-size:13px; }
+  .q textarea { width:100%; font-family:inherit; font-size:15px; line-height:1.5; padding:10px 12px;
+                box-sizing:border-box; border:1px solid #d8d3c4; background:#fff; min-height:70px; resize:vertical; }
+  .q textarea::placeholder { font-style:italic; color:#aaa; }
+  .go { display:inline-block; padding:11px 22px; border:1px solid #1a1a1a; cursor:pointer; margin-top:4px; }
+  .go:hover { background:#1a1a1a; color:#fdfcf8; }
+  .skip { color:#999; font-size:13px; cursor:pointer; margin-left:18px; }
+  .skip:hover { color:#1a1a1a; }
 </style></head>
 <body><div id="app"></div>
 <script>
-let items=[], cur=-1, total=0;
+let items=[], cur=-1, total=0, stated={}, questions=[];
 const app=document.getElementById('app');
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function done(){return items.filter(it=>it.verdict!==null).length;}
 async function load(){
   const d=await (await fetch('/api/curation')).json();
-  items=d.items; total=items.length;
+  items=d.items; total=items.length; stated=d.stated||{}; questions=d.questions||[];
+  if(!stated.done){ interview(); return; }
+  beginCurating();
+}
+function beginCurating(){
   cur=items.findIndex(it=>it.verdict===null);
   cur===-1 ? finish() : render();
+}
+function interview(){
+  const blocks=questions.map(q=>`<div class="q"><label>${esc(q.q)}</label>
+    <textarea id="st_${q.key}" placeholder="${esc(q.ph||'')}"></textarea></div>`).join('');
+  app.innerHTML=`<h1>First, in your words</h1>
+  <p class="sub">Before you judge anything — say what you're looking for, in your own words. This is a weak
+    prior; what you actually keep/drop is the real signal. The gap between them tells us something too.</p>
+  ${blocks}
+  <div><span class="go" onclick="submitStated()">Begin curating →</span>
+    <span class="skip" onclick="submitStated()">skip the rest</span></div>`;
+  window.scrollTo(0,0);
+}
+async function submitStated(){
+  const body={};
+  questions.forEach(q=>{ body[q.key]=(document.getElementById('st_'+q.key)||{}).value||''; });
+  await fetch('/api/stated',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)});
+  stated.done=true; beginCurating();
 }
 async function mark(v){
   if(cur<0)return;
@@ -119,7 +201,7 @@ async function finish(){
     const el=document.getElementById('sep');
     if(s.auc!==undefined){
       const read = s.auc>=0.72 ? 'clean — the automated latent-space eval is viable.'
-        : s.auc>=0.62 ? 'comparable to the noisy auto-labels — the why-axes likely add the rest.'
+        : s.auc>=0.62 ? 'above the ~0.62 auto-label baseline — the why-axes add the rest.'
         : 'faint — likely representation-limited.';
       el.innerHTML=`Your standard separates in the latent space at <b>AUC ${s.auc.toFixed(2)}</b> `
         +`(vs ~0.62 on the old auto-labels, ${s.n_keep} keep / ${s.n_drop} drop) — ${read}`;
@@ -144,7 +226,7 @@ def serve_curation(n=40, port=8422, seed=0):
     _DIR.mkdir(parents=True, exist_ok=True)
     if not _FILE.exists():
         items = select_curation_items(n=n, seed=seed)
-        _FILE.write_text(json.dumps({"items": items}, indent=2))
+        _FILE.write_text(json.dumps({"stated": {}, "items": items}, indent=2))
         print(f"Built curation set: {len(items)} of your real interactions.")
 
     class H(http.server.BaseHTTPRequestHandler):
@@ -164,21 +246,27 @@ def serve_curation(n=40, port=8422, seed=0):
             if p in ("/", "/index.html"):
                 self._send(200, _HTML, "text/html; charset=utf-8")
             elif p == "/api/curation":
-                self._send(200, _FILE.read_text())
+                a = json.loads(_FILE.read_text())
+                a["questions"] = _STATED_QUESTIONS  # single source of truth → page renders these
+                self._send(200, json.dumps(a))
             elif p == "/api/separability":
                 self._send(200, json.dumps(curation_separability()))
             else:
                 self._send(404, "{}")
 
         def do_POST(self):
-            if urlparse(self.path).path == "/api/curate":
-                n_ = int(self.headers.get("Content-Length", 0) or 0)
-                data = json.loads(self.rfile.read(n_) or b"{}")
+            p = urlparse(self.path).path
+            n_ = int(self.headers.get("Content-Length", 0) or 0)
+            data = json.loads(self.rfile.read(n_) or b"{}") if p in ("/api/curate", "/api/stated") else {}
+            if p == "/api/curate":
                 a = json.loads(_FILE.read_text())
                 i = int(data["index"])
                 a["items"][i]["verdict"] = data["verdict"]
                 a["items"][i]["why"] = (data.get("why") or "").strip()
                 _FILE.write_text(json.dumps(a, indent=2))
+                self._send(200, json.dumps({"ok": True}))
+            elif p == "/api/stated":
+                save_stated(data)
                 self._send(200, json.dumps({"ok": True}))
             else:
                 self._send(404, "{}")
@@ -189,7 +277,10 @@ def serve_curation(n=40, port=8422, seed=0):
         webbrowser.open(url)
     except Exception:
         pass
-    with socketserver.TCPServer(("127.0.0.1", port), H) as httpd:
+    class _Server(socketserver.TCPServer):
+        allow_reuse_address = True  # restartable without waiting out TIME_WAIT on the port
+
+    with _Server(("127.0.0.1", port), H) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
@@ -239,6 +330,13 @@ def summarize_curation():
     dropped = [it for it in items if it["verdict"] == "drop"]
     rated = len(kept) + len(dropped)
     print(f"Curation: {rated}/{len(items)} rated — {len(kept)} keep, {len(dropped)} drop")
+    stated = a.get("stated", {})
+    if stated.get("done"):
+        print("\nStated rubric (what you said up front — the weak prior):")
+        for q in _STATED_QUESTIONS:
+            v = (stated.get(q["key"]) or "").strip()
+            if v:
+                print(f"   {q['key']}: {v}")
     whys = [it["why"] for it in items if it.get("why")]
     print(f"  {len(whys)} reasons captured (seed for the WHY-rubric)")
     for w in whys[:8]:
