@@ -1,6 +1,6 @@
 """Geometric eval ensemble orchestrator.
 
-score_items: per eval response, fuse gate + propagation + probe -> quality, aggregate to a
+score_items: per eval response, fuse gate + propagation + probe + taste -> quality, aggregate to a
 scorecard. compare_geometric: keep/revert from reward delta with a noise band (work through
 geometric noise to stability instead of trusting a paid judge).
 """
@@ -8,6 +8,7 @@ import numpy as np
 
 from bespoke.eval.gates import run_gates
 from bespoke.eval.meta import MetaScorer
+from bespoke.eval.taste_axes import taste_score
 
 
 def score_items(items, probe=None, propagation_scores=None, meta=None):
@@ -33,12 +34,14 @@ def score_items(items, probe=None, propagation_scores=None, meta=None):
             "gate_passed": 1 if gate["passed"] else 0,
             "propagation": float(prop[i]),
             "probe": probe_score,
+            "taste": taste_score(it.get("output", "")),
         }
         per_item.append({
             "quality": meta.quality(features),
             "gate_passed": features["gate_passed"],
             "propagation": features["propagation"],
             "probe": features["probe"],
+            "taste": features["taste"],
         })
 
     reward = float(np.mean([p["quality"] for p in per_item])) if per_item else 0.0

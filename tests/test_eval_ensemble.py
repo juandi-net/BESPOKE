@@ -27,6 +27,16 @@ class TestScoreItems:
         # item 2 gate-fails -> 0, item 1 high -> reward is the average
         assert card["per_item"][1]["quality"] == 0.0
         assert card["per_item"][0]["quality"] > 0.5
+        # taste is computed from the output text and surfaced per item
+        assert "taste" in card["per_item"][0]
+        assert card["per_item"][0]["taste"] == 1.0   # "good answer" has no negative tells
+
+    def test_taste_penalizes_fluffy_output(self):
+        from bespoke.eval.ensemble import score_items
+        items = [{"prompt": "p", "output": "Great question! 🚀 You're absolutely right!",
+                  "domain": "strategy", "embedding": np.ones(768, np.float32)}]
+        card = score_items(items)
+        assert card["per_item"][0]["taste"] < 1.0
 
 
 class TestCompareGeometric:

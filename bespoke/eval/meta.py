@@ -1,12 +1,15 @@
 """Meta-scorer: fuse orthogonal per-response signals into one quality in [0, 1].
 
 Gate is a hard multiplier (fail => 0). When a trained logistic model exists it fuses
-[gate, propagation, probe]; otherwise falls back to the mean of the geometric signals.
-The fusion model itself can be trained on accept/reject labels later — no LLM needed.
+[gate, propagation, probe, taste]; otherwise falls back to the mean of the geometric signals.
+`taste` is the mechanical taste-axis fusion (RT-006, bespoke.eval.taste_axes.taste_score) — an
+orthogonal, no-LLM signal that catches juandi's negative tells (emoji/exclamation/deflection) the
+faint geometric probe misses. The fusion model itself trains on accept/reject labels later — no LLM.
 """
 import numpy as np
 
-FEATURE_ORDER = ("gate_passed", "propagation", "probe")
+FEATURE_ORDER = ("gate_passed", "propagation", "probe", "taste")
+_GEOMETRIC = ("propagation", "probe", "taste")
 
 
 class MetaScorer:
@@ -28,4 +31,4 @@ class MetaScorer:
             classes = list(self.model.classes_)
             if 1 in classes:
                 return float(self.model.predict_proba(f)[0, classes.index(1)])
-        return float((features["propagation"] + features["probe"]) / 2)
+        return float(np.mean([features[k] for k in _GEOMETRIC]))
