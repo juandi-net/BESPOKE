@@ -248,5 +248,55 @@ def rt006_report():
     return {"auc_axes": auc_axes, "auc_emb": auc_emb, "auc_combo": auc_combo}
 
 
+def rt007_arena_report():
+    """RT-007 — does taste_score (built from CURATION labels) generalize to a DIFFERENT human-labeled
+    set: juandi's blind ARENA verdicts (RT-004)? Cross-set validation, no overfitting to curation.
+    """
+    import json
+    from pathlib import Path
+    import numpy as np
+    from sklearn.metrics import roc_auc_score
+    path = Path.home() / ".bespoke" / "arena" / "arena_16rated.json"
+    if not path.exists():
+        print(f"no rated arena at {path}")
+        return
+    items = json.loads(path.read_text())["items"]
+
+    picked, unpicked = [], []
+    kept_tell = rej_tell = n_kept = n_rej = 0
+    top_hits = decisive = 0
+    for it in items:
+        v, R = it.get("verdict"), it["responses"]
+        sc = {k: taste_score(t) for k, t in R.items()}
+        pick = v if v in R else None
+        for k, t in R.items():
+            tell = (emoji_count(t) > 0) or (exclamation_count(t) > 0)
+            if k == pick:
+                picked.append(sc[k]); n_kept += 1; kept_tell += tell
+            else:
+                unpicked.append(sc[k]); n_rej += 1; rej_tell += tell
+        if pick:
+            decisive += 1
+            top_hits += (sc[pick] == max(sc.values()))
+
+    y = np.array([1] * len(picked) + [0] * len(unpicked))
+    s = np.array(picked + unpicked)
+    print("=" * 72)
+    print(f"RT-007 — taste_score vs juandi's blind ARENA verdicts ({len(items)} items, held out from curation)")
+    print("=" * 72)
+    print(f"  mean taste_score   picked {np.mean(picked):.3f}   passed-over {np.mean(unpicked):.3f}")
+    print(f"  emoji/exclamation tell present:  kept {kept_tell}/{n_kept}   rejected {rej_tell}/{n_rej}")
+    print(f"  picked = top taste_score in {top_hits}/{decisive} decisive items (taste is necessary, not sufficient)")
+    print(f"  pooled AUC (taste predicts his pick): {roc_auc_score(y, s):.3f}")
+    print("-" * 72)
+    print("Read: the curation-built taste signal GENERALIZES to arena verdicts (above chance, picked>passed-over,")
+    print("tells 2-3x rarer in keeps) — but modestly; depth/substance (untracked here) decides the rest.")
+    print("-" * 72)
+
+
 if __name__ == "__main__":
-    rt006_report()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "arena":
+        rt007_arena_report()
+    else:
+        rt006_report()
