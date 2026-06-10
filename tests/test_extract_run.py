@@ -95,3 +95,37 @@ class TestGeometricExtract:
         run_geometric_extract(conn=db)  # nothing unprocessed now
         p2 = db.execute("SELECT COUNT(*) FROM training_pairs").fetchone()[0]
         assert p1 == p2 and p1 == 5
+
+    def test_fluffy_response_is_taste_demoted(self, db):
+        """A response carrying juandi's negative tells (emoji/sycophancy) is demoted one bucket so
+        clear fluff drops out of the high+medium training set — the adapter shouldn't learn to emit it."""
+        from bespoke.extract.run import run_geometric_extract
+        # clean accepted prose -> stays high (fast-accept chain)
+        for i in range(5):
+            _ins(db, "clean", f"2026-06-02T00:0{i}:00Z", "real q", "a direct, useful answer",
+                 "perfect, do it", GOOD)
+        # a fluffy accepted response in its own self-contained session
+        _ins(db, "fluff", "2026-06-02T02:00:00Z", "real q",
+             "Great question! 🚀 You're absolutely right!", "perfect, do it", GOOD)
+        _ins(db, "fluff", "2026-06-02T02:01:00Z", "next", "ok", "thanks", GOOD)
+
+        stats = run_geometric_extract(conn=db)
+
+        assert stats["taste_demoted"] >= 1
+        fluffy = db.execute(
+            "SELECT quality_score FROM training_pairs WHERE response LIKE '%🚀%'").fetchone()
+        assert fluffy is not None and fluffy["quality_score"] != "high"
+
+
+class TestTasteDemote:
+    def test_clean_response_keeps_bucket(self):
+        from bespoke.extract.run import taste_demote
+        assert taste_demote("high", "Set the flag to false and redeploy.") == "high"
+
+    def test_fluffy_response_drops_one_bucket(self):
+        from bespoke.extract.run import taste_demote
+        assert taste_demote("high", "Great question! 🚀 You're absolutely right!") == "medium"
+
+    def test_low_stays_low(self):
+        from bespoke.extract.run import taste_demote
+        assert taste_demote("low", "🚀🚀🚀 amazing!!!") == "low"

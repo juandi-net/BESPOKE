@@ -26,6 +26,22 @@ QUALITY_FALLBACK = {"strong_accept": "high", "accept": "high", "neutral": "mediu
                     "reject": "low", "strong_reject": "exclude"}
 FAST_ACCEPT_SECONDS = 180  # accepted within 3 min of the next turn = fast accept = quality boost
 
+# Taste demotion (RT-006/007): a frontier response is what the adapter learns to imitate, so a response
+# carrying juandi's negative tells (emoji/sycophancy/exclamation) teaches the adapter to emit them. Demote
+# such pairs one quality bucket → clear fluff falls out of the high+medium training set. SOFT, not a hard
+# drop: RT-007 found even juandi's KEEPS occasionally carry one tell (taste_score >= ~0.7), so a single mild
+# tell must survive. taste_score < 0.7 ≈ emoji present, or sycophancy + another tell.
+TASTE_DEMOTE_THRESHOLD = 0.7
+_DEMOTE = {"high": "medium", "medium": "low", "low": "low"}
+
+
+def taste_demote(quality, response):
+    """Drop `quality` one bucket when `response` carries strong negative taste tells; else unchanged."""
+    from bespoke.eval.taste_axes import taste_score
+    if taste_score(response) < TASTE_DEMOTE_THRESHOLD:
+        return _DEMOTE.get(quality, quality)
+    return quality
+
 
 def _bucket(score):
     if score >= 0.66:
@@ -40,7 +56,7 @@ def run_geometric_extract(conn=None):
     close = conn is None
     conn = conn or get_connection()
     stats = {"interactions_labeled": 0, "pairs_written": 0, "tangled_sessions": 0,
-             "probe_trained": False}
+             "probe_trained": False, "taste_demoted": 0}
 
     unprocessed = {r["id"] for r in conn.execute(
         "SELECT id FROM interactions WHERE processed_2a_at IS NULL").fetchall()}
@@ -126,6 +142,9 @@ def run_geometric_extract(conn=None):
                 if t["feedback_class"] in ("accept", "strong_accept") and i + 1 < len(seg):
                     if 0 < _gap_seconds(t, seg[i + 1]) <= FAST_ACCEPT_SECONDS:
                         q = "high"
+                # taste demotion: don't teach the adapter to emit juandi's negative tells
+                q_before = q
+                q = taste_demote(q, resp)
                 # tangled sessions: keep only high-quality pairs (conservative selection)
                 if tangled and q != "high":
                     continue
@@ -134,6 +153,8 @@ def run_geometric_extract(conn=None):
                     "instruction, response, quality_score) VALUES (?, 'sft', ?, ?, ?, ?)",
                     (t["id"], t.get("domain") or "general", instr, resp, q))
                 stats["pairs_written"] += 1
+                if q != q_before:
+                    stats["taste_demoted"] += 1
     conn.commit()
 
     if close:
