@@ -116,8 +116,12 @@ def generate_with_context(message_lists, model_path, adapter_path):
     return out
 
 
-def build_arena(n=16, out_dir=None, seed=0):
-    """Select held-out items, reconstruct session context, generate base+adapter, blind-assemble, write."""
+def build_arena(n=16, out_dir=None, seed=0, adapter_name="general-v1"):
+    """Select held-out items, reconstruct session context, generate base+adapter, blind-assemble, write.
+
+    adapter_name picks which trained adapter faces the arena (e.g. a retrained general-v2-taste)
+    while older adapters stay on disk for comparison.
+    """
     from bespoke.db.init import get_connection
 
     items = select_arena_items(n=n, seed=seed)
@@ -135,7 +139,7 @@ def build_arena(n=16, out_dir=None, seed=0):
     with_ctx = sum(1 for it in items if it["context_turns"] > 0)
 
     model_path = str(config.base_model.training_model_path)
-    adapter_path = str(config.adapters_dir / "general-v1" / "sft")
+    adapter_path = str(config.adapters_dir / adapter_name / "sft")
     print(f"Generating BASE responses ({len(items)} prompts; {with_ctx} with reconstructed context)...")
     base = generate_with_context(msg_lists, model_path, "")
     print("Generating ADAPTER responses...")

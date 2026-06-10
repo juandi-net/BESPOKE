@@ -142,9 +142,13 @@ def run_geometric_extract(conn=None):
                 if t["feedback_class"] in ("accept", "strong_accept") and i + 1 < len(seg):
                     if 0 < _gap_seconds(t, seg[i + 1]) <= FAST_ACCEPT_SECONDS:
                         q = "high"
-                # taste demotion: don't teach the adapter to emit juandi's negative tells
+                # taste demotion: don't teach the adapter to emit juandi's negative tells.
+                # Counted BEFORE the tangled filter — in a tangled session a demoted (ex-high)
+                # pair is dropped entirely, and that drop IS the taste filter working.
                 q_before = q
                 q = taste_demote(q, resp)
+                if q != q_before:
+                    stats["taste_demoted"] += 1
                 # tangled sessions: keep only high-quality pairs (conservative selection)
                 if tangled and q != "high":
                     continue
@@ -153,8 +157,6 @@ def run_geometric_extract(conn=None):
                     "instruction, response, quality_score) VALUES (?, 'sft', ?, ?, ?, ?)",
                     (t["id"], t.get("domain") or "general", instr, resp, q))
                 stats["pairs_written"] += 1
-                if q != q_before:
-                    stats["taste_demoted"] += 1
     conn.commit()
 
     if close:

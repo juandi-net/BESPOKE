@@ -121,6 +121,7 @@ def cmd_extract(args):
         stats = run_geometric_extract()
         print(f"  {stats['interactions_labeled']} labeled, "
               f"{stats['pairs_written']} pairs written, "
+              f"{stats.get('taste_demoted', 0)} taste-demoted, "
               f"{stats['tangled_sessions']} tangled sessions, "
               f"probe_trained={stats['probe_trained']}")
 
@@ -396,7 +397,7 @@ def cmd_arena(args):
     """Blind thesis eval: base vs adapter vs frontier (=captured response), judged by you."""
     from bespoke.eval import arena
     if args.build:
-        arena.build_arena(n=args.n)
+        arena.build_arena(n=args.n, adapter_name=args.adapter)
     elif args.serve:
         arena.serve_arena()
     elif args.rate:
@@ -470,6 +471,8 @@ def main():
     p_arena.add_argument("--rate", action="store_true", help="Interactively rate the arena in the terminal (blind)")
     p_arena.add_argument("--score", action="store_true", help="Show win-rates from your ratings")
     p_arena.add_argument("--n", type=int, default=16, help="Number of items to build (default 16)")
+    p_arena.add_argument("--adapter", default="general-v1",
+                         help="Adapter name to face the arena (default general-v1)")
     p_arena.set_defaults(func=cmd_arena)
 
     # curate — one-time browser curation interview (seeds the model from your real data)

@@ -117,6 +117,26 @@ class TestGeometricExtract:
         assert fluffy is not None and fluffy["quality_score"] != "high"
 
 
+    def test_taste_demoted_stat_counts_tangled_drops(self, db):
+        """In a tangled session (kept conservatively: high only) a demoted fluffy pair is DROPPED —
+        right behavior, but the stat must still count the demotion or the extract under-reports
+        how much fluff the taste filter caught (found live: 76 reported vs ~900 actual)."""
+        from bespoke.extract.run import run_geometric_extract
+        # 8 turns, last followup is a reject -> not ended_in_accept -> tangled
+        for i in range(7):
+            fu = "perfect, do it" if i != 1 else "perfect, do it"
+            _ins(db, "tg", f"2026-06-02T00:0{i}:00Z", f"q{i}",
+                 "Great question! 🚀 You're absolutely right!" if i == 1 else "a direct answer",
+                 fu, GOOD)
+        _ins(db, "tg", "2026-06-02T00:07:00Z", "q7", "a", "no that's wrong, fix it", GOOD)
+
+        stats = run_geometric_extract(conn=db)
+
+        assert stats["taste_demoted"] >= 1  # the fluffy turn was demoted (then tangled-dropped)
+        fluffy = db.execute("SELECT 1 FROM training_pairs WHERE response LIKE '%🚀%'").fetchone()
+        assert fluffy is None               # ...and correctly kept OUT of the training set
+
+
 class TestTasteDemote:
     def test_clean_response_keeps_bucket(self):
         from bespoke.extract.run import taste_demote

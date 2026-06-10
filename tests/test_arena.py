@@ -51,3 +51,29 @@ def test_score_handles_none_acceptable_verdict():
 def test_score_no_ratings():
     rep = score_verdicts([{"key": {"A": "base"}, "verdict": None}])
     assert rep["n_rated"] == 0
+
+
+def test_cli_arena_build_passes_adapter_name():
+    from unittest.mock import MagicMock, patch
+    from bespoke import cli
+    with patch("bespoke.eval.arena.build_arena") as build:
+        cli.cmd_arena(MagicMock(build=True, n=16, adapter="general-v2-taste"))
+    build.assert_called_once_with(n=16, adapter_name="general-v2-taste")
+
+
+def test_build_arena_uses_named_adapter(tmp_path, monkeypatch):
+    """build_arena(adapter_name=...) generates against THAT adapter (so a retrained v2 can face
+    the arena while v1 stays on disk for comparison) and records the path in arena.json."""
+    import json
+    from unittest.mock import MagicMock, patch
+    from bespoke.eval import arena as A
+    item = {"prompt": "q", "orig": "q", "frontier": "f"}
+    with patch.object(A, "select_arena_items", return_value=[dict(item)]), \
+         patch.object(A, "_context_messages", return_value=[]), \
+         patch.object(A, "generate_with_context", return_value=["x"]) as gen, \
+         patch("bespoke.db.init.get_connection", return_value=MagicMock()):
+        A.build_arena(n=1, out_dir=tmp_path, adapter_name="general-v2-taste")
+    written = json.loads((tmp_path / "arena.json").read_text())
+    assert written["adapter_path"].endswith("general-v2-taste/sft")
+    # second generate call (the adapter one) got the v2 path
+    assert gen.call_args_list[1].args[2].endswith("general-v2-taste/sft")
