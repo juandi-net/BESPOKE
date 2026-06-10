@@ -59,6 +59,15 @@ class TestRunSftTrainingOverrides:
         cfg = yaml.safe_load((adapter_dir / "lora_config.yaml").read_text())
         assert cfg["lora_parameters"]["rank"] == 16
 
+    def test_save_cadence_matches_eval_cadence(self, tmp_path):
+        """Every val-evaluated iteration must have a saved checkpoint, or best-checkpoint
+        selection can't promote it (v3 run: best val was at it100, first save at it200)."""
+        _, _, mock_sub = _run(tmp_path, _proc())
+        cmd = [str(c) for c in mock_sub.Popen.call_args[0][0]]
+        eval_every = cmd[cmd.index("--steps-per-eval") + 1]
+        save_every = cmd[cmd.index("--save-every") + 1]
+        assert save_every == eval_every
+
 
 class TestBestCheckpointPromotion:
     def test_promotes_best_checkpoint_over_final(self, tmp_path):

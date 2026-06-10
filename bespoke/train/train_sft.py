@@ -84,7 +84,7 @@ def run_sft_training(
         "--iters", str(iters),
         "--max-seq-length", str(max_seq),
         "--steps-per-eval", "100",
-        "--save-every", "200",
+        "--save-every", "100",   # = steps-per-eval, so every val-scored iter is promotable
         "--grad-checkpoint",
         "--mask-prompt",   # loss ONLY on the assistant response, not the user prompt
         "-c", str(lora_cfg_path),
