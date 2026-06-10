@@ -69,19 +69,23 @@ def save_stated(answers):
     return stated
 
 
-def select_curation_items(n=40, seed=0):
+def select_curation_items(n=40, seed=0, exclude_ids=(), conn=None):
     """Sample real interactions (boilerplate-stripped prompt + cleaned response) to curate."""
     from bespoke.extract.content_type import strip_conductor_boilerplate, clean_tool_blocks
-    conn = get_connection()
+    close = conn is None
+    conn = conn or get_connection()
     rows = conn.execute("""
         SELECT id, user_message, assistant_response, content_type
         FROM interactions
         WHERE content_type IN ('clean', 'agentic')
           AND length(user_message) BETWEEN 20 AND 2000
           AND length(assistant_response) BETWEEN 30 AND 4000
-        ORDER BY RANDOM() LIMIT ?""", (n * 4,)).fetchall()
+        ORDER BY RANDOM() LIMIT ?""", (n * 4 + len(exclude_ids),)).fetchall()
+    skip = set(exclude_ids)
     items = []
     for r in rows:
+        if r["id"] in skip:
+            continue
         prompt = (strip_conductor_boilerplate(r["user_message"]) or "").strip()
         if not (20 <= len(prompt) <= 2000):
             continue
@@ -94,9 +98,26 @@ def select_curation_items(n=40, seed=0):
         items.append({"id": r["id"], "prompt": prompt, "response": resp, "verdict": None, "why": ""})
         if len(items) >= n:
             break
-    conn.close()
+    if close:
+        conn.close()
     random.Random(seed).shuffle(items)
     return items
+
+
+def extend_curation_items(n=20, seed=1, conn=None):
+    """Append n fresh, never-curated items to the existing set (next-steps #2: grow toward ~100).
+
+    Existing items/verdicts/whys and the stated{} block are preserved; new items arrive unrated, so
+    the browser session resumes exactly at the first unrated item. Returns how many were added.
+    """
+    if not _FILE.exists():
+        raise RuntimeError("No curation set yet — run `bespoke curate` first.")
+    a = json.loads(_FILE.read_text())
+    have = [it["id"] for it in a["items"]]
+    new = select_curation_items(n=n, seed=seed, exclude_ids=have, conn=conn)
+    a["items"].extend(new)
+    _FILE.write_text(json.dumps(a, indent=2))
+    return len(new)
 
 
 _HTML = """<!doctype html>

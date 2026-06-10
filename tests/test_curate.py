@@ -88,3 +88,41 @@ def test_summarize_prints_stated_rubric(curfile, capsys):
     out = capsys.readouterr().out
     assert "just do it" in out
     assert "too soft, too much noise" in out
+
+
+# --- extend the curation set beyond the initial 40 (next-steps #2) ---
+
+def _seed_interactions(db, n, start=1000):
+    for i in range(n):
+        db.execute(
+            "INSERT INTO interactions (id, provider, model, source, user_message, assistant_response, "
+            "content_type) VALUES (?, 'c','m','s', ?, ?, 'clean')",
+            (start + i, f"a real question number {start+i} with enough length to pass the filter",
+             f"a real, sufficiently long answer for interaction {start+i} that clears thirty chars"))
+    db.commit()
+
+
+def test_extend_appends_new_unrated_items_without_touching_existing(curfile, db):
+    curfile.parent.mkdir(parents=True, exist_ok=True)
+    existing = {"stated": {"good": "x", "done": True},
+                "items": [{"id": 1000, "prompt": "p", "response": "r", "verdict": "keep", "why": "w"}]}
+    curfile.write_text(json.dumps(existing))
+    _seed_interactions(db, 10)
+
+    added = curate.extend_curation_items(n=3, conn=db)
+
+    a = json.loads(curfile.read_text())
+    assert added == 3
+    assert len(a["items"]) == 4
+    assert a["items"][0]["verdict"] == "keep" and a["items"][0]["why"] == "w"  # untouched
+    assert a["stated"]["done"] is True                                         # untouched
+    new = a["items"][1:]
+    assert all(it["verdict"] is None for it in new)
+    assert 1000 not in [it["id"] for it in new]      # already-curated id is excluded
+
+
+def test_extend_requires_existing_curation(curfile, db):
+    _seed_interactions(db, 5)
+    import pytest as _pytest
+    with _pytest.raises(RuntimeError):
+        curate.extend_curation_items(n=2, conn=db)

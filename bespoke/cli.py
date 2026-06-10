@@ -413,6 +413,9 @@ def cmd_curate(args):
     from bespoke.benchmark import curate
     if args.summary:
         curate.summarize_curation()
+    elif getattr(args, "extend", None):
+        added = curate.extend_curation_items(n=args.extend)
+        print(f"Added {added} fresh items to curate. Run `bespoke curate` to rate them.")
     else:
         curate.serve_curation(n=args.n)
 
@@ -479,6 +482,8 @@ def main():
     p_curate = subparsers.add_parser("curate", help="One-time browser curation: keep/drop your real interactions + why")
     p_curate.add_argument("--summary", action="store_true", help="Review your curation so far")
     p_curate.add_argument("--n", type=int, default=40, help="How many interactions to curate (default 40)")
+    p_curate.add_argument("--extend", type=int, metavar="N",
+                          help="Append N fresh never-curated items to the existing set (grow toward ~100)")
     p_curate.set_defaults(func=cmd_curate)
 
     # serve
