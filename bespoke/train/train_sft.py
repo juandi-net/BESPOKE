@@ -103,10 +103,26 @@ def run_sft_training(
         print(f"  Recency: {recency_days} days")
     print(f"  Quality: {min_quality}+")
 
-    result = subprocess.run(cmd, capture_output=False)
+    # Stream stdout to the terminal AND a log: the val-loss lines are what best-checkpoint
+    # selection needs (RT-002: mlx keeps the LAST iteration, which can be worse than an
+    # earlier save-point). capture_output=False threw that signal away.
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    log_lines = []
+    for line in proc.stdout:
+        print(line, end="")
+        log_lines.append(line)
+    proc.wait()
+    log_text = "".join(log_lines)
+    (adapter_dir / "train.log").write_text(log_text)
 
-    if result.returncode != 0:
-        raise RuntimeError(f"SFT training failed with return code {result.returncode}")
+    if proc.returncode != 0:
+        raise RuntimeError(f"SFT training failed with return code {proc.returncode}")
+
+    from bespoke.train.checkpoints import select_best_checkpoint
+    best = select_best_checkpoint(log_text, adapter_dir)
+    if best is not None:
+        shutil.copy2(best, adapter_dir / "adapters.safetensors")
+        print(f"Promoted {best.name} over the final adapter (lower val loss).")
 
     print(f"SFT training complete. Adapter saved to {adapter_dir}")
     return adapter_dir
