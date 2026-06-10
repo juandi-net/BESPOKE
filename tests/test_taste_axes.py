@@ -32,6 +32,12 @@ def test_sycophancy_flags_absolutely_right():
 def test_sycophancy_clean_answer_scores_zero():
     assert t.sycophancy_score("The bug is on line 12; fix the off-by-one.") == 0
 
+def test_sycophancy_flags_fake_agreement():
+    # stated interview 2026-06-10: #1 bad signal = "super agreeable and just fake"
+    assert t.sycophancy_score("I completely agree with you there.") >= 1
+    assert t.sycophancy_score("You're spot on about that.") >= 1
+    assert t.sycophancy_score("Couldn't agree more!") >= 1
+
 
 # ---- exclamation_count ----
 def test_exclamation_count():

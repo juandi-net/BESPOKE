@@ -15,7 +15,9 @@ from datetime import datetime
 
 from bespoke.db.init import get_connection
 from bespoke.extract.feedback import classify_feedback
-from bespoke.extract.content_type import classify_content, clean_tool_blocks, strip_conductor_boilerplate
+from bespoke.extract.content_type import (
+    classify_content, clean_tool_blocks, strip_conductor_boilerplate, strip_tool_markers,
+)
 from bespoke.extract.conversations import assemble_sessions, segment_conversation, _gap_seconds
 from bespoke.extract.mechanical import is_tangled
 from bespoke.eval.signals import get_labeled_embeddings
@@ -56,7 +58,7 @@ def run_geometric_extract(conn=None):
     close = conn is None
     conn = conn or get_connection()
     stats = {"interactions_labeled": 0, "pairs_written": 0, "tangled_sessions": 0,
-             "probe_trained": False, "taste_demoted": 0}
+             "probe_trained": False, "taste_demoted": 0, "marker_only_dropped": 0}
 
     unprocessed = {r["id"] for r in conn.execute(
         "SELECT id FROM interactions WHERE processed_2a_at IS NULL").fetchall()}
@@ -134,7 +136,13 @@ def run_geometric_extract(conn=None):
                 instr = (strip_conductor_boilerplate(t["user_message"]) or "").strip()
                 resp = (t["assistant_response"] or "").strip()
                 if ctype == "agentic":
+                    # clean_tool_blocks leaves a [N tool calls] marker (metadata for embeddings);
+                    # it must NOT enter SFT response text — the model imitates it (v2-taste bug).
                     resp = (clean_tool_blocks(resp) or "").strip()
+                    had_content = bool(resp)
+                    resp = (strip_tool_markers(resp) or "").strip()
+                    if had_content and not resp:
+                        stats["marker_only_dropped"] += 1
                 if not instr or not resp:
                     continue
                 q = quality.get(t["id"], "medium")

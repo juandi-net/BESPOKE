@@ -80,10 +80,11 @@ class TestGeometricExtract:
         assert not any("<observation>" in r for r in responses)
         # no raw tool syntax survives into training data
         assert not any("<tool_use" in r or "<tool_result" in r for r in responses)
-        # the agentic pair is kept, reasoning preserved, dump summarized
+        # the agentic pair is kept, reasoning preserved; the marker stays OUT of SFT text
+        # (it's metadata — tool_call_count; as response text the model learns to emit it)
         agentic = [r for r in responses if "final answer" in r]
         assert len(agentic) == 1
-        assert "[1 tool call]" in agentic[0]
+        assert "tool call" not in agentic[0]
         assert "<thinking>plan</thinking>" in agentic[0]
 
     def test_incremental_no_duplicate_pairs(self, db):
@@ -135,6 +136,25 @@ class TestGeometricExtract:
         assert stats["taste_demoted"] >= 1  # the fluffy turn was demoted (then tangled-dropped)
         fluffy = db.execute("SELECT 1 FROM training_pairs WHERE response LIKE '%🚀%'").fetchone()
         assert fluffy is None               # ...and correctly kept OUT of the training set
+
+
+    def test_sft_pairs_never_contain_tool_markers(self, db):
+        """The [N tool calls] marker is metadata, not language to imitate: v2-taste learned to
+        ANSWER with the literal marker. Pairs get the marker stripped; marker-only responses drop."""
+        from bespoke.extract.run import run_geometric_extract
+        agentic_with_prose = ('<thinking>plan</thinking>'
+                              '<tool_use name="Bash">x</tool_use><tool_result>y</tool_result>'
+                              ' the real answer')
+        agentic_only_tools = '<tool_use name="Bash">x</tool_use><tool_result>y</tool_result>'
+        _ins(db, "s1", "2026-06-02T00:00:00Z", "do a task", agentic_with_prose, "nice thanks", GOOD)
+        _ins(db, "s2", "2026-06-02T00:00:00Z", "another task", agentic_only_tools, "ok thanks", GOOD)
+
+        stats = run_geometric_extract(conn=db)
+
+        responses = [r["response"] for r in db.execute("SELECT response FROM training_pairs").fetchall()]
+        assert not any("tool call" in r for r in responses)   # marker never reaches SFT text
+        assert any("the real answer" in r for r in responses)  # prose survives
+        assert stats["marker_only_dropped"] >= 1               # tools-only response is not a pair
 
 
 class TestTasteDemote:

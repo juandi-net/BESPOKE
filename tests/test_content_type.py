@@ -1,5 +1,30 @@
 """Tests for the deterministic content-type classifier + tool-block cleaner."""
-from bespoke.extract.content_type import classify_content, clean_tool_blocks
+from bespoke.extract.content_type import classify_content, clean_tool_blocks, strip_tool_markers
+
+
+# --- strip_tool_markers: marker is METADATA, never SFT response text ---
+# (general-v2-taste learned to answer literally '[1 tool call]' on 12/16 arena prompts because
+#  19% of training responses contained the marker and 7.8% OPENED with it.)
+
+def test_strip_marker_removes_leading_marker():
+    assert strip_tool_markers("[3 tool calls] the real answer") == "the real answer"
+
+
+def test_strip_marker_only_becomes_empty():
+    assert strip_tool_markers("[1 tool call]") == ""
+
+
+def test_strip_marker_mid_text():
+    assert strip_tool_markers("plan first [2 tool calls] then ship it") == "plan first then ship it"
+
+
+def test_strip_marker_noop_without_marker():
+    assert strip_tool_markers("nothing to strip") == "nothing to strip"
+
+
+def test_strip_marker_none_and_empty():
+    assert strip_tool_markers(None) is None
+    assert strip_tool_markers("") == ""
 
 
 # --- classify_content: content_type ---

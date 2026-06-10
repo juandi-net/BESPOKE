@@ -70,6 +70,22 @@ def strip_conductor_boilerplate(text):
     return _SYS_INSTRUCTION.sub("", text).strip()
 
 
+_MARKER = re.compile(r"\s*\[\d+ tool calls?\]\s*")
+
+
+def strip_tool_markers(text):
+    """Remove `[N tool call(s)]` markers from text a model will IMITATE (SFT responses).
+
+    The marker is metadata — `tool_call_count` carries the signal. As response text it is
+    anti-teaching: general-v2-taste (2026-06-10) trained with markers in 19% of responses
+    (7.8% as the opener) and learned to literally answer '[1 tool call]' on 12/16 arena
+    prompts. Keep markers for embedding/eval content; never in training-pair responses.
+    """
+    if not text:
+        return text
+    return _MARKER.sub(" ", text).strip()
+
+
 def clean_tool_blocks(text):
     """Strip raw <tool_use>/<tool_result> blocks, collapse them to one `[N tool call(s)]` marker.
 

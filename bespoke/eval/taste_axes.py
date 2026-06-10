@@ -19,13 +19,17 @@ _EMOJI = re.compile(
     "\U00002B00-\U00002BFF\U0001F1E6-\U0001F1FF]"    # arrows/stars, regional indicators
 )
 
-# Sycophancy / flattery openers and affirmations juandi explicitly rejects.
+# Sycophancy / flattery openers and affirmations juandi explicitly rejects. Stated interview
+# (2026-06-10) named this the #1 bad signal — "super agreeable and just fake" — so it includes
+# fake-agreement phrases, not just flattery openers.
 _SYCOPHANCY = [
     "great question", "good question", "excellent question", "absolutely right",
     "you're absolutely right", "you are absolutely right", "you're right", "you are right",
     "great point", "good point", "great choice", "great idea", "that's a great",
     "happy to help", "i'd be happy", "i would be happy", "glad to", "i'd love to",
     "excellent", "fantastic", "wonderful", "love it", "perfect choice",
+    "i completely agree", "i totally agree", "couldn't agree more", "could not agree more",
+    "you're spot on", "you are spot on", "spot on", "exactly right", "brilliant",
 ]
 _SYCO_RE = [re.compile(re.escape(p)) for p in _SYCOPHANCY]
 
