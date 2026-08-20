@@ -1,0 +1,78 @@
+#!/bin/sh
+# Pre-commit guard: block private files and secrets from being committed.
+# Installed via: git config core.hooksPath .githooks
+# Emergency bypass: git commit --no-verify (avoid; GitHub push protection still applies)
+
+fail=0
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+is_template() {
+  case "$1" in
+    *.example|*.example.*|*.sample|*.template|*.dist) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# --- 1. Path deny-list: files that must never be committed -------------------
+deny='(^|/)\.env($|\.)|(^|/)\.DS_Store$|(^|/)data/orgs/[^/]+/|(^|/)\.serena/|(^|/)\.conductor/|(^|/)conductor\.json$|(^|/)fly\.toml$|(^|/)docs/(plans|superpowers|archive)/|(^|/)strategy/(program|LEARNING)\.md$|(^|/)research/|\.(pem|p12|pfx|key)$|(^|/)id_(rsa|ed25519)$|\.sqlite3?$|(^|/)secrets?\.(json|ya?ml|toml)$'
+
+scanfiles=""
+for f in $staged; do
+  if is_template "$f"; then continue; fi
+  if printf '%s\n' "$f" | grep -Eq "$deny"; then
+    echo "BLOCKED (private path): $f"
+    fail=1
+  else
+    scanfiles="$scanfiles $f"
+  fi
+done
+
+# --- 2. Content scan of staged additions (template/example files excluded) ---
+added=""
+generic=""
+if [ -n "$scanfiles" ]; then
+  added=$(git diff --cached --unified=0 --diff-filter=ACMR -- $scanfiles | grep '^+' | grep -v '^+++')
+  # Placeholder filter applies ONLY to the low-confidence generic rule below,
+  # so that a real vendor key is never excused by the word "example".
+  # Also excludes unquoted code references such as `apiKey: creds.resendApiKey`.
+  placeholder='your[-_]|placeholder|changeme|change[-_]me|dummy|fake|redacted|xxxx|<[a-z_]*>|\$\{|process\.env|os\.environ|import\.meta\.env|\*\*\*|EXAMPLE_|_EXAMPLE|[:=][[:space:]]*[A-Za-z_$][A-Za-z0-9_$]*\.[A-Za-z0-9_$]|[:=][[:space:]]*(await|new|require|import)[[:space:]]'
+  generic=$(printf '%s\n' "$added" | grep -Eiv -- "$placeholder")
+fi
+
+scan() {
+  label=$1; flags=$2; re=$3; body=$4
+  [ -z "$body" ] && return 0
+  hit=$(printf '%s\n' "$body" | grep $flags -- "$re" | head -3)
+  if [ -n "$hit" ]; then
+    echo "BLOCKED (possible $label):"
+    printf '%s\n' "$hit" | cut -c1-140 | sed 's/^/    /'
+    fail=1
+  fi
+}
+
+# High-confidence vendor patterns: never suppressed by placeholder wording.
+scan "GitHub token"         -E  'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' "$added"
+scan "OpenAI/Anthropic key" -E  'sk-(proj-|ant-)?[A-Za-z0-9_-]{20,}'                      "$added"
+scan "AWS access key"       -E  'AKIA[0-9A-Z]{16}'                                        "$added"
+scan "Google API key"       -E  'AIza[0-9A-Za-z_-]{35}'                                   "$added"
+scan "Slack token"          -E  'xox[baprs]-[A-Za-z0-9-]{10,}'                            "$added"
+scan "Resend API key"       -E  're_[A-Za-z0-9]{20,}'                                     "$added"
+scan "JWT / Supabase key"   -E  'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.'          "$added"
+
+# Private key blocks: placeholder-filtered so test fixtures using a fake PEM pass.
+scan "private key block"    -E  'BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY'              "$generic"
+
+# Low-confidence generic rule: placeholders filtered out to avoid noise.
+scan "hardcoded secret"     -Ei '(api[_-]?key|secret|password|passwd|auth[_-]?token|access[_-]?token)"?[[:space:]]*[:=][[:space:]]*"?[A-Za-z0-9/+=_.-]{16,}' "$generic"
+
+if [ "$fail" -ne 0 ]; then
+  cat <<'EOM'
+
+Commit rejected by .githooks/pre-commit.
+Fix: git restore --staged <file>   -- or replace the value with a placeholder.
+False positive? Use a placeholder such as "your-api-key-here", or an *.example file.
+EOM
+  exit 1
+fi
+exit 0

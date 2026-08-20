@@ -53,3 +53,20 @@ notes.md
 
 # Transient working plan (local)
 next-steps.md
+
+# --- Secrets & credentials (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+id_rsa
+id_ed25519
+secrets.json
+secrets.yaml
+secrets.yml
+credentials.json
+*.sqlite
+*.sqlite3
